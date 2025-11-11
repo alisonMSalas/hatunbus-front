@@ -21,6 +21,10 @@ const MAPPING = {
   'chevron.left': 'chevron-left',
   'eye': 'visibility',
   'eye.slash': 'visibility-off',
+  'magnifyingglass': 'search',
+  'ticket.fill': 'confirmation-number',
+  'clock.arrow.counterclockwise': 'history',
+  'person.fill': 'person',
 } as IconMapping;
 
 /**

@@ -5,6 +5,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ThemedTextInput } from '@/components/ui/text-input';
 import { EarthColors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
     Image,
@@ -30,8 +31,7 @@ export default function LoginScreen() {
 
   const handleSignUp = () => {
     // Navegar a la pantalla de registro
-    // router.push('/register');
-    console.log('Navegar a registro');
+    router.push('/register');
   };
 
 

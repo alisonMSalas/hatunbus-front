@@ -29,6 +29,9 @@ export const EarthColors = {
   // Grises tierra
   grayEarth: '#9B8B7A', // Gris tierra
   grayEarthLight: '#B5A896', // Gris tierra claro
+  
+  // Azul para navegación activa
+  bluePrimary: '#2563EB', // Azul vibrante para tabs activos
 };
 
 const tintColorLight = EarthColors.earthPrimary;
@@ -41,7 +44,7 @@ export const Colors = {
     tint: tintColorLight,
     icon: EarthColors.earthDark,
     tabIconDefault: EarthColors.grayEarth,
-    tabIconSelected: tintColorLight,
+    tabIconSelected: EarthColors.bluePrimary,
   },
   dark: {
     text: EarthColors.beigeLight,
@@ -49,7 +52,7 @@ export const Colors = {
     tint: tintColorDark,
     icon: EarthColors.grayEarthLight,
     tabIconDefault: EarthColors.grayEarth,
-    tabIconSelected: tintColorDark,
+    tabIconSelected: EarthColors.bluePrimary,
   },
 };
 

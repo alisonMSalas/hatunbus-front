@@ -3,11 +3,11 @@ import { StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
-export default function ModalScreen() {
+export default function TicketsScreen() {
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title">Modal</ThemedText>
-      <ThemedText>Modal content goes here.</ThemedText>
+      <ThemedText type="title">Tickets</ThemedText>
+      <ThemedText>Pantalla de tickets</ThemedText>
     </ThemedView>
   );
 }
@@ -18,5 +18,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    paddingBottom: 100,
   },
 });
+

@@ -3,11 +3,11 @@ import { StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
-export default function SearchScreen() {
+export default function HistoryScreen() {
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title">Buscar</ThemedText>
-      <ThemedText>Pantalla de búsqueda</ThemedText>
+      <ThemedText type="title">Historial</ThemedText>
+      <ThemedText>Pantalla de historial</ThemedText>
     </ThemedView>
   );
 }
@@ -21,3 +21,4 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
 });
+
