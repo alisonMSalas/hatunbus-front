@@ -19,12 +19,16 @@ const MAPPING = {
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
   'chevron.left': 'chevron-left',
+  'chevron.down': 'keyboard-arrow-down',
   'eye': 'visibility',
   'eye.slash': 'visibility-off',
   'magnifyingglass': 'search',
   'ticket.fill': 'confirmation-number',
   'clock.arrow.counterclockwise': 'history',
   'person.fill': 'person',
+  'location.fill': 'location-on',
+  'calendar': 'calendar-today',
+  'arrow.up.arrow.down': 'swap-vert',
 } as IconMapping;
 
 /**

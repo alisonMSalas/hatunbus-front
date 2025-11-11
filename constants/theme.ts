@@ -23,6 +23,7 @@ export const EarthColors = {
   // Negros y blancos
   blackSoft: '#1A1A1A', // Negro suave elegante
   blackMedium: '#2C2C2C', // Negro medio
+  blackSoftOpacity: 'rgba(26, 26, 26, 0.6)', // Negro suave con opacidad para placeholders
   whiteBone: '#FFFFFF', // Blanco puro
   whiteWarm: '#FFFEFB', // Blanco cálido
   
@@ -32,6 +33,12 @@ export const EarthColors = {
   
   // Azul para navegación activa
   bluePrimary: '#2563EB', // Azul vibrante para tabs activos
+  blueLight: '#60A5FA', // Azul claro para botones y elementos activos
+  
+  // Grises para fondos
+  grayLight: '#F5F5F5', // Gris muy claro para fondos de tarjetas
+  grayMedium: '#E5E5E5', // Gris medio para bordes
+  grayInput: '#D1D5DB', // Gris para inputs (medio)
 };
 
 const tintColorLight = EarthColors.earthPrimary;
@@ -44,7 +51,7 @@ export const Colors = {
     tint: tintColorLight,
     icon: EarthColors.earthDark,
     tabIconDefault: EarthColors.grayEarth,
-    tabIconSelected: EarthColors.bluePrimary,
+    tabIconSelected: EarthColors.earthPrimary,
   },
   dark: {
     text: EarthColors.beigeLight,
@@ -52,7 +59,7 @@ export const Colors = {
     tint: tintColorDark,
     icon: EarthColors.grayEarthLight,
     tabIconDefault: EarthColors.grayEarth,
-    tabIconSelected: EarthColors.bluePrimary,
+    tabIconSelected: EarthColors.earthLight,
   },
 };
 
