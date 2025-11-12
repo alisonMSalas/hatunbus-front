@@ -7,6 +7,7 @@ import { Platform } from 'react-native';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AuthProvider } from '@/contexts/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useMontserratFont } from '@/hooks/use-montserrat-font';
 
@@ -59,21 +60,25 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack>
-          <Stack.Screen name="login" options={{ headerShown: false }} />
-          <Stack.Screen name="register" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="search-results" options={{ headerShown: false }} />
-          <Stack.Screen name="trip-details" options={{ headerShown: false }} />
-          <Stack.Screen name="passenger-details" options={{ headerShown: false }} />
-          <Stack.Screen name="select-seats" options={{ headerShown: false }} />
-          <Stack.Screen name="payment-method" options={{ headerShown: false }} />
-          <Stack.Screen name="ticket-detail" options={{ headerShown: false }} />
-          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-        </Stack>
-        <StatusBar style="auto" />
-      </ThemeProvider>
+      <AuthProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <Stack>
+            <Stack.Screen name="login" options={{ headerShown: false }} />
+            <Stack.Screen name="register" options={{ headerShown: false }} />
+            <Stack.Screen name="role-selection" options={{ headerShown: false }} />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="(driver-tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="search-results" options={{ headerShown: false }} />
+            <Stack.Screen name="trip-details" options={{ headerShown: false }} />
+            <Stack.Screen name="passenger-details" options={{ headerShown: false }} />
+            <Stack.Screen name="select-seats" options={{ headerShown: false }} />
+            <Stack.Screen name="payment-method" options={{ headerShown: false }} />
+            <Stack.Screen name="ticket-detail" options={{ headerShown: false }} />
+            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+          </Stack>
+          <StatusBar style="auto" />
+        </ThemeProvider>
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }

@@ -3,9 +3,10 @@ import { ThemedView } from '@/components/themed-view';
 import { Header } from '@/components/ui/header';
 import { ThemedTextInput } from '@/components/ui/text-input';
 import { EarthColors } from '@/constants/theme';
+import { useAuth } from '@/contexts/AuthContext';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Image,
     Modal,
@@ -16,16 +17,29 @@ import {
 } from 'react-native';
 
 export default function ProfileScreen() {
-  // Datos del usuario - en el futuro vendrán de la API
+  const { user, logout } = useAuth();
   const [userData, setUserData] = useState({
-    name: 'Anya Petrova',
-    email: 'anya.petrova@email.com',
-    profileImage: null, // En el futuro será una URL de la API
+    name: user?.name || '',
+    email: user?.email || '',
+    profileImage: user?.profileImage || null,
   });
 
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [editName, setEditName] = useState(userData.name);
   const [editEmail, setEditEmail] = useState(userData.email);
+
+  // Actualizar datos cuando cambie el usuario
+  useEffect(() => {
+    if (user) {
+      setUserData({
+        name: user.name,
+        email: user.email,
+        profileImage: user.profileImage || null,
+      });
+      setEditName(user.name);
+      setEditEmail(user.email);
+    }
+  }, [user]);
 
   const handleEditProfile = () => {
     setIsEditModalVisible(true);
@@ -54,9 +68,9 @@ export default function ProfileScreen() {
     // router.push(`/${option}`);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     console.log('Cerrar sesión');
-    // Navegar al login - usar replace para limpiar el stack de navegación
+    await logout();
     router.replace('/login');
   };
 
@@ -110,6 +124,18 @@ export default function ProfileScreen() {
             style={styles.userEmail}>
             {userData.email}
           </ThemedText>
+
+          {/* User Role */}
+          {user && (
+            <View style={styles.roleBadge}>
+              <ThemedText 
+                lightColor={EarthColors.earthDarker} 
+                darkColor={EarthColors.beigeLight} 
+                style={styles.roleText}>
+                {user.role === 'driver' ? 'Conductor' : 'Pasajero'}
+              </ThemedText>
+            </View>
+          )}
         </View>
 
         {/* Menu Options */}
@@ -329,6 +355,18 @@ const styles = StyleSheet.create({
   userEmail: {
     fontSize: 16,
     textAlign: 'center',
+  },
+  roleBadge: {
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: EarthColors.earthPrimary + '20',
+  },
+  roleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    textTransform: 'capitalize',
   },
   menuCard: {
     backgroundColor: EarthColors.whiteBone,

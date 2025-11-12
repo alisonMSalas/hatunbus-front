@@ -4,29 +4,57 @@ import { Button } from '@/components/ui/button';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ThemedTextInput } from '@/components/ui/text-input';
 import { EarthColors } from '@/constants/theme';
+import { useAuth } from '@/contexts/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    TouchableOpacity,
-    View,
+  Alert, Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const colorScheme = useColorScheme();
+  const { login } = useAuth();
 
-  const handleLogin = () => {
-    // Aquí irá la lógica de autenticación
-    console.log('Iniciar sesión:', { email, password });
+  const handleLogin = async () => {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Error', 'Por favor ingresa tu email y contraseña');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const success = await login(email, password);
+      if (success) {
+        // Determinar el rol basado en el email y navegar
+        // Esperar un momento para que el contexto se actualice
+        setTimeout(() => {
+          if (email.toLowerCase().includes('conductor')) {
+            router.replace('/role-selection');
+          } else {
+            router.replace('/(tabs)');
+          }
+        }, 300);
+      } else {
+        Alert.alert('Error', 'Credenciales incorrectas. Por favor intenta de nuevo.');
+        setIsLoading(false);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Ocurrió un error al iniciar sesión');
+      console.error('Error en login:', error);
+      setIsLoading(false);
+    }
   };
 
   const handleSignUp = () => {
@@ -100,10 +128,33 @@ export default function LoginScreen() {
 
             {/* Botón de inicio de sesión */}
             <Button
-              title="Iniciar Sesión"
+              title={isLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
               onPress={handleLogin}
               style={styles.loginButton}
+              disabled={isLoading}
             />
+
+            {/* Información de usuarios de prueba */}
+            <View style={styles.testUsersContainer}>
+              <ThemedText 
+                lightColor={EarthColors.earthDark} 
+                darkColor={EarthColors.grayEarth} 
+                style={styles.testUsersTitle}>
+                Usuarios de prueba:
+              </ThemedText>
+              <ThemedText 
+                lightColor={EarthColors.earthDark} 
+                darkColor={EarthColors.grayEarth} 
+                style={styles.testUsersText}>
+                Pasajero: pasajero@hatunbus.com / 123456
+              </ThemedText>
+              <ThemedText 
+                lightColor={EarthColors.earthDark} 
+                darkColor={EarthColors.grayEarth} 
+                style={styles.testUsersText}>
+                Conductor: conductor@hatunbus.com / 123456
+              </ThemedText>
+            </View>
 
             {/* Enlace de registro */}
             <ThemedView style={styles.signUpContainer}>
@@ -197,6 +248,24 @@ const styles = StyleSheet.create({
   },
   signUpLink: {
     fontSize: 14,
+  },
+  testUsersContainer: {
+    marginTop: 24,
+    padding: 16,
+    backgroundColor: EarthColors.beigeLight || '#F5F0E8',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: EarthColors.beigeMedium || '#E8DFD5',
+  },
+  testUsersTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  testUsersText: {
+    fontSize: 12,
+    marginBottom: 4,
+    fontFamily: 'monospace',
   },
 });
 
