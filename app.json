@@ -39,7 +39,13 @@
           }
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "La aplicación necesita acceso a tu cámara para escanear códigos QR de boletos."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
