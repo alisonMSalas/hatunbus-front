@@ -45,7 +45,8 @@
         {
           "cameraPermission": "La aplicación necesita acceso a tu cámara para escanear códigos QR de boletos."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

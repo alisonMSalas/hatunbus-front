@@ -1,294 +1,136 @@
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Button } from '@/components/ui/button';
-import { Header } from '@/components/ui/header';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { ThemedTextInput } from '@/components/ui/text-input';
-import { EarthColors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { router } from 'expo-router';
 import React, { useState } from 'react';
-import {
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    TouchableOpacity,
-    View,
-} from 'react-native';
+import { StyleSheet, View, Alert, ScrollView, Pressable, Platform } from 'react-native';
+import { useRouter } from 'expo-router';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { useAuth } from '@/contexts/AuthContext';
+
+import { ThemedView } from '@/components/themed-view';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedTextInput } from '@/components/ui/text-input';
+import { Button } from '@/components/ui/button';
+import { EarthColors } from '@/constants/theme';
+import { register as registerService } from '@/services/auth';
 
 export default function RegisterScreen() {
-  const [fullName, setFullName] = useState('');
+  const router = useRouter();
+  const [firstNames, setFirstNames] = useState('');
+  const [lastNames, setLastNames] = useState('');
+  const [idCard, setIdCard] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const colorScheme = useColorScheme();
+  // Role is fixed to CLIENT for registrations from the mobile app
+  const role: 'CLIENT' = 'CLIENT';
+  const [birthDate, setBirthDate] = useState('1990-01-01');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [gender, setGender] = useState<'M' | 'F' | 'O'>('M');
+  const [loading, setLoading] = useState(false);
 
-  const handleRegister = () => {
-    // Aquí irá la lógica de registro
-    console.log('Registrarse:', { fullName, email, password, confirmPassword });
-  };
+  const { login: loginContext } = useAuth();
 
-  const handleLogin = () => {
-    // Navegar a la pantalla de login
-    router.push('/login');
-  };
+  async function onSubmit() {
+    if (!firstNames || !lastNames || !idCard || !password || !email) {
+      Alert.alert('Error', 'Completa los campos obligatorios (incluye email)');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const created = await registerService({
+        firstNames,
+        lastNames,
+        idCard,
+        email: email || undefined,
+        phone: phone || undefined,
+        password,
+        role: 'CLIENT',
+        birthDate,
+        gender,
+      });
+
+      // Auto-login after successful registration
+      try {
+        await loginContext(email, password);
+        // Navigate into app
+        router.replace('/(tabs)');
+      } catch (loginErr) {
+        // If auto-login fails, fallback to login screen
+        Alert.alert('Registrado', `Usuario creado: ${created.email || created.idCard}. Inicia sesión para continuar.`);
+        router.replace('/login');
+      }
+    } catch (e: any) {
+      console.error('Register error', e);
+      Alert.alert('Error', e?.message || 'No fue posible registrar');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <ThemedView style={styles.container}>
-      {/* Header fijo */}
-      <Header title="Registro" />
-      
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={styles.content}>
+        <ThemedText type="title">Registro</ThemedText>
 
-          {/* Título con logo y subtítulo */}
-          <ThemedView style={styles.headerContainer}>
-            <ThemedView style={styles.titleRow}>
-              <Image
-                source={require('@/assets/images/hatunbus2-removebg.png')}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-              <ThemedText 
-                type="title" 
-                lightColor={EarthColors.earthDarker} 
-                darkColor={EarthColors.beigeLight} 
-                style={styles.title}>
-                Crear cuenta
-              </ThemedText>
-            </ThemedView>
-            <ThemedText 
-              lightColor={EarthColors.earthDark} 
-              darkColor={EarthColors.beigeMedium} 
-              style={styles.subtitle}>
-              Completa los datos para registrarte
-            </ThemedText>
-          </ThemedView>
+        <ThemedTextInput placeholder="Nombres" value={firstNames} onChangeText={setFirstNames} />
+        <ThemedTextInput placeholder="Apellidos" value={lastNames} onChangeText={setLastNames} />
+        <ThemedTextInput placeholder="Cédula (10 dígitos)" value={idCard} onChangeText={setIdCard} keyboardType="number-pad" />
+        <ThemedTextInput placeholder="Email (obligatorio)" value={email} onChangeText={setEmail} keyboardType="email-address" />
+        <ThemedTextInput placeholder="Teléfono (10 dígitos)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+        <ThemedTextInput placeholder="Contraseña" value={password} onChangeText={setPassword} secureTextEntry />
 
-          {/* Campos de entrada */}
-          <ThemedView style={styles.formContainer}>
-            {/* Nombre completo */}
-            <ThemedView style={styles.fieldContainer}>
-              <ThemedText 
-                lightColor={EarthColors.earthDarker} 
-                darkColor={EarthColors.beigeLight} 
-                style={styles.label}>
-                Nombre completo
-              </ThemedText>
-              <ThemedTextInput
-                placeholder="Ingresa tu nombre completo"
-                value={fullName}
-                onChangeText={setFullName}
-                autoCapitalize="words"
-                autoComplete="name"
-                textContentType="name"
-                containerStyle={styles.inputContainer}
-              />
-            </ThemedView>
+        <ThemedText type="subtitle" style={{ marginTop: 8 }}>Fecha de nacimiento</ThemedText>
+        <Pressable onPress={() => setShowDatePicker(true)} style={styles.datePressable}>
+          <ThemedText style={styles.dateText}>{birthDate}</ThemedText>
+        </Pressable>
+        {showDatePicker && (
+          <DateTimePicker
+            value={new Date(birthDate)}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            maximumDate={new Date()}
+            onChange={(event: DateTimePickerEvent, selectedDate?: Date) => {
+              setShowDatePicker(false);
+              if (selectedDate) {
+                const y = selectedDate.getFullYear();
+                const m = String(selectedDate.getMonth() + 1).padStart(2, '0');
+                const d = String(selectedDate.getDate()).padStart(2, '0');
+                setBirthDate(`${y}-${m}-${d}`);
+              }
+            }}
+          />
+        )}
 
-            {/* Email */}
-            <ThemedView style={styles.fieldContainer}>
-              <ThemedText 
-                lightColor={EarthColors.earthDarker} 
-                darkColor={EarthColors.beigeLight} 
-                style={styles.label}>
-                Email
-              </ThemedText>
-              <ThemedTextInput
-                placeholder="Ingresa tu email"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoComplete="email"
-                textContentType="emailAddress"
-                containerStyle={styles.inputContainer}
-              />
-            </ThemedView>
+        <ThemedText type="subtitle" style={{ marginTop: 8 }}>Género</ThemedText>
+        <View style={styles.rolesRow}>
+          <Button title="Masculino" onPress={() => setGender('M')} style={gender === 'M' ? styles.roleActive : styles.roleBtn} />
+          <Button title="Femenino" onPress={() => setGender('F')} style={gender === 'F' ? styles.roleActive : styles.roleBtn} />
+        </View>
 
-            {/* Contraseña */}
-            <ThemedView style={styles.fieldContainer}>
-              <ThemedText 
-                lightColor={EarthColors.earthDarker} 
-                darkColor={EarthColors.beigeLight} 
-                style={styles.label}>
-                Contraseña
-              </ThemedText>
-              <View style={styles.passwordContainer}>
-                <ThemedTextInput
-                  placeholder="Ingresa tu contraseña"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  autoComplete="password"
-                  textContentType="password"
-                  containerStyle={[styles.inputContainer, styles.passwordInputContainer]}
-                  style={styles.passwordInput}
-                />
-                <Pressable
-                  style={styles.eyeIcon}
-                  onPress={() => setShowPassword(!showPassword)}>
-                  <IconSymbol
-                    name={showPassword ? 'eye.slash' : 'eye'}
-                    size={22}
-                    color={colorScheme === 'dark' ? EarthColors.grayEarth : EarthColors.earthPrimary}
-                  />
-                </Pressable>
-              </View>
-            </ThemedView>
-
-            {/* Confirmar contraseña */}
-            <ThemedView style={styles.fieldContainer}>
-              <ThemedText 
-                lightColor={EarthColors.earthDarker} 
-                darkColor={EarthColors.beigeLight} 
-                style={styles.label}>
-                Confirmar contraseña
-              </ThemedText>
-              <View style={styles.passwordContainer}>
-                <ThemedTextInput
-                  placeholder="Confirma tu contraseña"
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  secureTextEntry={!showConfirmPassword}
-                  autoCapitalize="none"
-                  autoComplete="password"
-                  textContentType="password"
-                  containerStyle={[styles.inputContainer, styles.passwordInputContainer]}
-                  style={styles.passwordInput}
-                />
-                <Pressable
-                  style={styles.eyeIcon}
-                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
-                  <IconSymbol
-                    name={showConfirmPassword ? 'eye.slash' : 'eye'}
-                    size={22}
-                    color={colorScheme === 'dark' ? EarthColors.grayEarth : EarthColors.earthPrimary}
-                  />
-                </Pressable>
-              </View>
-            </ThemedView>
-
-            {/* Botón de registro */}
-            <Button
-              title="Registrarse"
-              onPress={handleRegister}
-              style={styles.registerButton}
-            />
-
-            {/* Enlace de login */}
-            <ThemedView style={styles.loginContainer}>
-              <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.beigeMedium} style={styles.loginText}>
-                ¿Ya tienes una cuenta?{' '}
-              </ThemedText>
-              <TouchableOpacity onPress={handleLogin} activeOpacity={0.7}>
-                <ThemedText type="link" style={styles.loginLink}>Inicia sesión</ThemedText>
-              </TouchableOpacity>
-            </ThemedView>
-          </ThemedView>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        <Button title={loading ? 'Registrando...' : 'Registrar'} onPress={onSubmit} style={styles.registerBtn} disabled={loading} />
+      </ScrollView>
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: EarthColors.beigeBone,
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 40,
-    backgroundColor: EarthColors.beigeBone,
-  },
-  headerContainer: {
-    marginBottom: 28,
-    alignItems: 'center',
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  logo: {
-    width: 60,
-    height: 60,
-    marginRight: 12,
-  },
-  title: {
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    opacity: 0.75,
-    lineHeight: 22,
-    textAlign: 'center',
-  },
-  formContainer: {
-    width: '100%',
-  },
-  fieldContainer: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 14,
-    marginBottom: 8,
-    fontWeight: '600',
-  },
-  inputContainer: {
-    marginVertical: 0,
-  },
-  passwordContainer: {
-    position: 'relative',
-  },
-  passwordInputContainer: {
-    marginVertical: 0,
-  },
-  passwordInput: {
-    paddingRight: 50,
-  },
-  eyeIcon: {
-    position: 'absolute',
-    right: 16,
-    top: 14,
-    height: 24,
-    width: 24,
-    zIndex: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  registerButton: {
-    width: '100%',
+  container: { flex: 1, padding: 16 },
+  content: { gap: 12 },
+  rolesRow: { flexDirection: 'row', gap: 8, marginVertical: 8 },
+  roleBtn: { paddingHorizontal: 8 },
+  roleActive: { paddingHorizontal: 8, backgroundColor: EarthColors.earthPrimary },
+  registerBtn: { marginTop: 16 },
+  datePressable: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D0D0D0',
     marginTop: 8,
+    backgroundColor: 'white',
   },
-  loginContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 32,
-  },
-  loginText: {
-    fontSize: 14,
-  },
-  loginLink: {
-    fontSize: 14,
+  dateText: {
+    color: '#333',
   },
 });
+
 

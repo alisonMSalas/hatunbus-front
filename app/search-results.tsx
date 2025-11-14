@@ -4,12 +4,15 @@ import { Header } from '@/components/ui/header';
 import { EarthColors } from '@/constants/theme';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router, useLocalSearchParams } from 'expo-router';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { getJsonWithAuth } from '@/services/api';
+import { API_BASE_URL } from '@/constants/api';
 import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from 'react-native';
 
 interface TripResult {
@@ -26,50 +29,64 @@ interface TripResult {
 
 export default function SearchResultsScreen() {
   const params = useLocalSearchParams();
+  const [trips, setTrips] = useState<TripResult[]>([]);
+  const [loading, setLoading] = useState(true);
   
-  // Datos de ejemplo - en el futuro vendrán de la API
   const searchParams = {
-    origin: Array.isArray(params.origin) ? params.origin[0] : params.origin || 'Nueva York',
-    destination: Array.isArray(params.destination) ? params.destination[0] : params.destination || 'Chicago',
-    date: Array.isArray(params.date) ? params.date[0] : params.date || 'Hoy',
+    origin: Array.isArray(params.origin) ? params.origin[0] : params.origin || '',
+    destination: Array.isArray(params.destination) ? params.destination[0] : params.destination || '',
+    date: Array.isArray(params.date) ? params.date[0] : params.date || '',
     passengers: Array.isArray(params.passengers) ? params.passengers[0] : params.passengers || '1',
   };
 
-  const trips: TripResult[] = [
-    {
-      id: '1',
-      operator: 'Coop. El Rápido',
-      seatType: 'Bus Cama',
-      price: '25.00',
-      departureTime: '08:00 AM',
-      departureCity: 'Nueva York',
-      arrivalTime: '04:00 PM',
-      arrivalCity: 'Chicago',
-      duration: '8h 0m',
-    },
-    {
-      id: '2',
-      operator: 'Coop. Veloz',
-      seatType: 'Semicama',
-      price: '22.50',
-      departureTime: '09:30 AM',
-      departureCity: 'Nueva York',
-      arrivalTime: '06:00 PM',
-      arrivalCity: 'Chicago',
-      duration: '8h 30m',
-    },
-    {
-      id: '3',
-      operator: 'Coop. Express',
-      seatType: 'Bus Cama',
-      price: '28.00',
-      departureTime: '10:00 AM',
-      departureCity: 'Nueva York',
-      arrivalTime: '05:45 PM',
-      arrivalCity: 'Chicago',
-      duration: '7h 45m',
-    },
-  ];
+  useEffect(() => {
+    loadTrips();
+  }, []);
+
+  const loadTrips = async () => {
+    try {
+      setLoading(true);
+      const data = await getJsonWithAuth(
+        `${API_BASE_URL}/viajes/buscar?fecha=${searchParams.date}&origen=${encodeURIComponent(searchParams.origin)}&destino=${encodeURIComponent(searchParams.destination)}`
+      );
+      
+      // Map backend data to frontend format
+      const mappedTrips = data.map((trip: any) => ({
+        id: trip.id,
+        operator: trip.frequency?.cooperative?.name || 'Cooperativa',
+        seatType: trip.busSeatsCount ? `${trip.busSeatsCount} asientos` : 'Bus',
+        price: trip.frequency?.route?.basePrice?.toString() || '0.00',
+        departureTime: formatTime(trip.scheduledDepartureTime),
+        departureCity: trip.routeOrigin || searchParams.origin,
+        arrivalTime: formatTime(trip.scheduledArrivalTime),
+        arrivalCity: trip.routeDestination || searchParams.destination,
+        duration: calculateDuration(trip.scheduledDepartureTime, trip.scheduledArrivalTime),
+      }));
+      
+      setTrips(mappedTrips);
+    } catch (error) {
+      console.error('Error loading trips:', error);
+      alert('Error al cargar los viajes');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatTime = (datetime: string) => {
+    if (!datetime) return '--:--';
+    const date = new Date(datetime);
+    return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const calculateDuration = (departure: string, arrival: string) => {
+    if (!departure || !arrival) return '--';
+    const dep = new Date(departure);
+    const arr = new Date(arrival);
+    const diff = arr.getTime() - dep.getTime();
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours}h ${minutes}m`;
+  };
 
   const handleSelectTrip = (trip: TripResult) => {
     // Navegar a la pantalla de detalles del viaje
@@ -126,8 +143,22 @@ export default function SearchResultsScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Loading Indicator */}
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={EarthColors.blackSoft} />
+            <ThemedText style={styles.loadingText}>Buscando viajes...</ThemedText>
+          </View>
+        ) : trips.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <MaterialIcons name="search-off" size={64} color={EarthColors.earthDark} />
+            <ThemedText style={styles.emptyText}>No se encontraron viajes</ThemedText>
+            <ThemedText style={styles.emptySubtext}>Intenta con otras fechas o ciudades</ThemedText>
+          </View>
+        ) : null}
+
         {/* Trip Results */}
-        {trips.map((trip) => (
+        {!loading && trips.map((trip) => (
           <View key={trip.id} style={styles.tripCard}>
             {/* Operator and Seat Type */}
             <View style={styles.tripHeader}>
@@ -336,6 +367,32 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: EarthColors.beigeBone,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: EarthColors.earthDark,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    marginTop: 16,
+    fontSize: 18,
+    fontWeight: '600',
+    color: EarthColors.earthDarker,
+  },
+  emptySubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    color: EarthColors.earthDark,
   },
 });
 

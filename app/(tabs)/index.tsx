@@ -7,13 +7,18 @@ import { EarthColors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { getJsonWithAuth } from '@/services/api';
+import { API_BASE_URL } from '@/constants/api';
 
 import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
   View,
+  ActivityIndicator,
+  Modal,
+  FlatList,
 } from 'react-native';
 
 export default function SearchScreen() {
@@ -21,7 +26,36 @@ export default function SearchScreen() {
   const [destination, setDestination] = useState('');
   const [departureDate, setDepartureDate] = useState('Hoy');
   const [passengers, setPassengers] = useState('1');
+  const [origins, setOrigins] = useState<string[]>([]);
+  const [destinations, setDestinations] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showOriginPicker, setShowOriginPicker] = useState(false);
+  const [showDestinationPicker, setShowDestinationPicker] = useState(false);
   const colorScheme = useColorScheme();
+
+  useEffect(() => {
+    loadCities();
+  }, []);
+
+  const loadCities = async () => {
+    try {
+      setLoading(true);
+      // Fetch cities from the new API endpoint (no auth required)
+      const response = await fetch(`${API_BASE_URL}/ciudades`);
+      const citiesData = await response.json();
+      
+      // Extract city names from the response
+      const cityNames = citiesData.map((city: any) => city.name);
+      
+      // Use the same list for both origins and destinations
+      setOrigins(cityNames);
+      setDestinations(cityNames);
+    } catch (error) {
+      console.error('Error loading cities:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSwap = () => {
     const temp = origin;
@@ -30,13 +64,21 @@ export default function SearchScreen() {
   };
 
   const handleSearch = () => {
-    // Navegar a la pantalla de resultados de búsqueda
+    if (!origin || !destination) {
+      alert('Por favor selecciona origen y destino');
+      return;
+    }
+
+    // Format date from "Hoy" to YYYY-MM-DD
+    const today = new Date();
+    const formattedDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
     router.push({
       pathname: '/search-results',
       params: {
-        origin: origin || 'Nueva York',
-        destination: destination || 'Chicago',
-        date: departureDate,
+        origin: origin,
+        destination: destination,
+        date: formattedDate,
         passengers: passengers,
       },
     });
@@ -47,34 +89,31 @@ export default function SearchScreen() {
       {/* Header */}
       <Header title="Buscar Boletos" showBackButton={false} />
       
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
-        
-        {/* Card Container */}
-        <View style={styles.card}>
-          {/* Origin Field */}
-          <View style={styles.fieldContainer}>
-            <ThemedText lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.label}>
-              Origen
-            </ThemedText>
-            <View style={styles.inputWithIcons}>
-              <MaterialIcons name="location-on" size={20} color={EarthColors.blackSoft} style={styles.leftIcon} />
-              <ThemedTextInput
-                placeholder="Selecciona Origen"
-                value={origin}
-                onChangeText={setOrigin}
-                style={styles.input}
-                containerStyle={styles.inputContainer}
-                editable={false}
-                placeholderTextColor={EarthColors.blackSoftOpacity || 'rgba(26, 26, 26, 0.6)'}
-              />
-              <TouchableOpacity style={styles.rightIcon}>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={EarthColors.blackSoft} />
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}>
+          
+          {/* Card Container */}
+          <View style={styles.card}>
+            {/* Origin Field */}
+            <View style={styles.fieldContainer}>
+              <ThemedText lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.label}>
+                Origen
+              </ThemedText>
+              <TouchableOpacity style={styles.selectField} onPress={() => setShowOriginPicker(true)}>
+                <MaterialIcons name="location-on" size={20} color={EarthColors.blackSoft} />
+                <ThemedText lightColor={origin ? EarthColors.earthDarker : EarthColors.blackSoftOpacity} darkColor={EarthColors.beigeLight} style={styles.selectFieldText}>
+                  {origin || 'Selecciona Origen'}
+                </ThemedText>
                 <IconSymbol name="chevron.down" size={20} color={EarthColors.blackSoft} />
               </TouchableOpacity>
             </View>
-          </View>
 
           {/* Swap Button */}
           <View style={styles.swapButtonContainer}>
@@ -88,21 +127,13 @@ export default function SearchScreen() {
             <ThemedText lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.label}>
               Destino
             </ThemedText>
-            <View style={styles.inputWithIcons}>
-              <MaterialIcons name="location-on" size={20} color={EarthColors.blackSoft} style={styles.leftIcon} />
-              <ThemedTextInput
-                placeholder="Selecciona Destino"
-                value={destination}
-                onChangeText={setDestination}
-                style={styles.input}
-                containerStyle={styles.inputContainer}
-                editable={false}
-                placeholderTextColor={EarthColors.blackSoftOpacity || 'rgba(26, 26, 26, 0.6)'}
-              />
-              <TouchableOpacity style={styles.rightIcon}>
-                <IconSymbol name="chevron.down" size={20} color={EarthColors.blackSoft} />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity style={styles.selectField} onPress={() => setShowDestinationPicker(true)}>
+              <MaterialIcons name="location-on" size={20} color={EarthColors.blackSoft} />
+              <ThemedText lightColor={destination ? EarthColors.earthDarker : EarthColors.blackSoftOpacity} darkColor={EarthColors.beigeLight} style={styles.selectFieldText}>
+                {destination || 'Selecciona Destino'}
+              </ThemedText>
+              <IconSymbol name="chevron.down" size={20} color={EarthColors.blackSoft} />
+            </TouchableOpacity>
           </View>
 
           {/* Departure Date Field */}
@@ -140,6 +171,63 @@ export default function SearchScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      )}
+
+      {/* Origin Picker Modal */}
+      <Modal visible={showOriginPicker} transparent animationType="slide">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <ThemedText style={styles.modalTitle}>Selecciona Origen</ThemedText>
+              <TouchableOpacity onPress={() => setShowOriginPicker(false)}>
+                <IconSymbol name="xmark" size={24} color={EarthColors.blackSoft} />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={origins}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setOrigin(item);
+                    setShowOriginPicker(false);
+                  }}>
+                  <ThemedText style={styles.modalItemText}>{item}</ThemedText>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Destination Picker Modal */}
+      <Modal visible={showDestinationPicker} transparent animationType="slide">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <ThemedText style={styles.modalTitle}>Selecciona Destino</ThemedText>
+              <TouchableOpacity onPress={() => setShowDestinationPicker(false)}>
+                <IconSymbol name="xmark" size={24} color={EarthColors.blackSoft} />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={destinations}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.modalItem}
+                  onPress={() => {
+                    setDestination(item);
+                    setShowDestinationPicker(false);
+                  }}>
+                  <ThemedText style={styles.modalItemText}>{item}</ThemedText>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
@@ -148,6 +236,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: EarthColors.grayLight || '#F5F5F5',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   scrollView: {
     flex: 1,
@@ -258,5 +351,41 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: EarthColors.whiteBone,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingVertical: 20,
+    maxHeight: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: EarthColors.grayInput,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: EarthColors.earthDarker,
+  },
+  modalItem: {
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: EarthColors.grayInput,
+  },
+  modalItemText: {
+    fontSize: 16,
+    color: EarthColors.earthDarker,
   },
 });

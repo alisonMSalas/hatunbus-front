@@ -1,3 +1,17 @@
+import React, { useState } from 'react';
+import {
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { router } from 'expo-router';
+
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Button } from '@/components/ui/button';
@@ -6,18 +20,6 @@ import { ThemedTextInput } from '@/components/ui/text-input';
 import { EarthColors } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { router } from 'expo-router';
-import React, { useState } from 'react';
-import {
-  Alert, Image,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  View
-} from 'react-native';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -35,53 +37,35 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     try {
-      const success = await login(email, password);
-      if (success) {
-        // Determinar el rol basado en el email y navegar
-        // Esperar un momento para que el contexto se actualice
-        setTimeout(() => {
-          if (email.toLowerCase().includes('conductor')) {
-            router.replace('/role-selection');
-          } else {
-            router.replace('/(tabs)');
-          }
-        }, 300);
-      } else {
-        Alert.alert('Error', 'Credenciales incorrectas. Por favor intenta de nuevo.');
-        setIsLoading(false);
-      }
+      await login(email, password);
+      // Navegar según rol (aquí inferimos por email como atajo)
+      setTimeout(() => {
+        if (email.toLowerCase().includes('conductor')) {
+          router.replace('/role-selection');
+        } else {
+          router.replace('/(tabs)');
+        }
+      }, 200);
     } catch (error) {
-      Alert.alert('Error', 'Ocurrió un error al iniciar sesión');
+      Alert.alert('Error', 'Credenciales incorrectas o error del servidor');
       console.error('Error en login:', error);
+    } finally {
       setIsLoading(false);
     }
   };
 
   const handleSignUp = () => {
-    // Navegar a la pantalla de registro
     router.push('/register');
   };
 
-
   return (
     <ThemedView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled">
-          {/* Logo */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <ThemedView style={styles.logoContainer}>
-            <Image
-              source={require('@/assets/images/hatunbus-removebg-preview.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
+            <Image source={require('@/assets/images/hatunbus-removebg-preview.png')} style={styles.logo} resizeMode="contain" />
           </ThemedView>
 
-          {/* Título y subtítulo */}
           <ThemedView style={styles.headerContainer}>
             <ThemedText type="title" lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.title}>
               Bienvenido de nuevo
@@ -91,78 +75,38 @@ export default function LoginScreen() {
             </ThemedText>
           </ThemedView>
 
-          {/* Campos de entrada */}
           <ThemedView style={styles.formContainer}>
-            <ThemedTextInput
-              placeholder="Email o Usuario"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              autoComplete="email"
-              textContentType="emailAddress"
-            />
+            <ThemedTextInput placeholder="Email o Usuario" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" textContentType="emailAddress" />
 
             <View style={styles.passwordContainer}>
-              <ThemedTextInput
-                placeholder="Contraseña"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                autoComplete="password"
-                textContentType="password"
-                containerStyle={styles.passwordInputContainer}
-                style={styles.passwordInput}
-              />
-              <Pressable
-                style={styles.eyeIcon}
-                onPress={() => setShowPassword(!showPassword)}>
-                <IconSymbol
-                  name={showPassword ? 'eye.slash' : 'eye'}
-                  size={22}
-                  color={colorScheme === 'dark' ? EarthColors.grayEarth : EarthColors.earthPrimary}
-                />
+              <ThemedTextInput placeholder="Contraseña" value={password} onChangeText={setPassword} secureTextEntry={!showPassword} autoCapitalize="none" autoComplete="password" textContentType="password" containerStyle={styles.passwordInputContainer} style={styles.passwordInput} />
+              <Pressable style={styles.eyeIcon} onPress={() => setShowPassword(!showPassword)}>
+                <IconSymbol name={showPassword ? 'eye.slash' : 'eye'} size={22} color={colorScheme === 'dark' ? EarthColors.grayEarth : EarthColors.earthPrimary} />
               </Pressable>
             </View>
 
-            {/* Botón de inicio de sesión */}
-            <Button
-              title={isLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
-              onPress={handleLogin}
-              style={styles.loginButton}
-              disabled={isLoading}
-            />
+            <Button title={isLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'} onPress={handleLogin} style={styles.loginButton} disabled={isLoading} />
 
-            {/* Información de usuarios de prueba */}
             <View style={styles.testUsersContainer}>
-              <ThemedText 
-                lightColor={EarthColors.earthDark} 
-                darkColor={EarthColors.grayEarth} 
-                style={styles.testUsersTitle}>
+              <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.testUsersTitle}>
                 Usuarios de prueba:
               </ThemedText>
-              <ThemedText 
-                lightColor={EarthColors.earthDark} 
-                darkColor={EarthColors.grayEarth} 
-                style={styles.testUsersText}>
+              <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.testUsersText}>
                 Pasajero: pasajero@hatunbus.com / 123456
               </ThemedText>
-              <ThemedText 
-                lightColor={EarthColors.earthDark} 
-                darkColor={EarthColors.grayEarth} 
-                style={styles.testUsersText}>
+              <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.testUsersText}>
                 Conductor: conductor@hatunbus.com / 123456
               </ThemedText>
             </View>
 
-            {/* Enlace de registro */}
             <ThemedView style={styles.signUpContainer}>
               <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.beigeMedium} style={styles.signUpText}>
                 ¿Nuevo en HatunBus?{' '}
               </ThemedText>
               <TouchableOpacity onPress={handleSignUp} activeOpacity={0.7}>
-                <ThemedText type="link" style={styles.signUpLink}>Regístrate</ThemedText>
+                <ThemedText type="link" style={styles.signUpLink}>
+                  Regístrate
+                </ThemedText>
               </TouchableOpacity>
             </ThemedView>
           </ThemedView>
