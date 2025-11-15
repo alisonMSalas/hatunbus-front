@@ -4,6 +4,7 @@ import { Header } from '@/components/ui/header';
 import { EarthColors } from '@/constants/theme';
 import { useLocalSearchParams } from 'expo-router';
 import React from 'react';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import {
     ScrollView,
     StyleSheet,
@@ -13,7 +14,13 @@ import QRCode from 'react-native-qrcode-svg';
 
 export default function TicketDetailScreen() {
   const params = useLocalSearchParams();
-  
+
+  // Check if this is a history ticket
+  const isHistory = params.isHistory === 'true';
+  const status = Array.isArray(params.status) ? params.status[0] : params.status;
+  const usageDate = Array.isArray(params.usageDate) ? params.usageDate[0] : params.usageDate;
+  const validatingDriver = Array.isArray(params.validatingDriver) ? params.validatingDriver[0] : params.validatingDriver;
+
   // Datos del ticket - en el futuro vendrán de la API
   const ticketData = {
     route: `${Array.isArray(params.origin) ? params.origin[0] : params.origin || 'Quito'} - ${Array.isArray(params.destination) ? params.destination[0] : params.destination || 'Guayaquil'}`,
@@ -24,6 +31,18 @@ export default function TicketDetailScreen() {
     cooperative: Array.isArray(params.cooperative) ? params.cooperative[0] : params.cooperative || 'Trans Andes',
     bus: Array.isArray(params.bus) ? params.bus[0] : params.bus || 'Bus #456',
     ticketId: Array.isArray(params.ticketId) ? params.ticketId[0] : params.ticketId || 'TKT-123456',
+  };
+
+  const formatUsageDate = (dateStr?: string) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   // Generar el contenido del QR code (puede incluir el ID del ticket y otros datos)
@@ -39,28 +58,88 @@ export default function TicketDetailScreen() {
   return (
     <ThemedView style={styles.container}>
       {/* Header */}
-      <Header title="Boleto" />
-      
+      <Header title={isHistory ? "Detalle del Viaje" : "Boleto"} />
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
-        
+
         {/* Ticket Card */}
         <View style={styles.ticketCard}>
+          {/* Status Banner (only for history) */}
+          {isHistory && (
+            <View style={[
+              styles.statusBanner,
+              status === 'COMPLETED' ? styles.statusCompleted : styles.statusMissed
+            ]}>
+              <MaterialIcons
+                name={status === 'COMPLETED' ? 'check-circle' : 'cancel'}
+                size={24}
+                color={EarthColors.whiteBone}
+              />
+              <ThemedText style={styles.statusBannerText}>
+                {status === 'COMPLETED' ? 'VIAJE COMPLETADO' : 'VIAJE PERDIDO'}
+              </ThemedText>
+            </View>
+          )}
+
           {/* QR Code Section */}
           <View style={styles.qrSection}>
-            <View style={styles.qrContainer}>
+            <View style={[
+              styles.qrContainer,
+              isHistory && status === 'MISSED' && styles.qrContainerDisabled
+            ]}>
               <QRCode
                 value={qrContent}
                 size={168}
                 color={EarthColors.blackSoft}
                 backgroundColor={EarthColors.whiteBone}
               />
+              {isHistory && status === 'MISSED' && (
+                <View style={styles.qrOverlay}>
+                  <MaterialIcons name="block" size={80} color="rgba(255, 152, 0, 0.8)" />
+                </View>
+              )}
             </View>
+            {isHistory && !usageDate && (
+              <ThemedText style={styles.qrWarning}>
+                Este ticket no fue validado
+              </ThemedText>
+            )}
             {/* Dashed line separator */}
             <View style={styles.dashedLine} />
           </View>
+
+          {/* Validation Info (if completed) */}
+          {isHistory && status === 'COMPLETED' && usageDate && (
+            <View style={styles.validationBanner}>
+              <View style={styles.validationHeader}>
+                <MaterialIcons name="verified" size={24} color="#4CAF50" />
+                <ThemedText style={styles.validationTitle}>Ticket Validado</ThemedText>
+              </View>
+              <View style={styles.validationDetails}>
+                <View style={styles.validationRow}>
+                  <MaterialIcons name="schedule" size={18} color="#2E7D32" />
+                  <ThemedText style={styles.validationLabel}>Fecha de escaneo:</ThemedText>
+                </View>
+                <ThemedText style={styles.validationValue}>
+                  {formatUsageDate(usageDate)}
+                </ThemedText>
+                {validatingDriver && (
+                  <>
+                    <View style={styles.validationRow}>
+                      <MaterialIcons name="badge" size={18} color="#2E7D32" />
+                      <ThemedText style={styles.validationLabel}>Conductor:</ThemedText>
+                    </View>
+                    <ThemedText style={styles.validationValue}>
+                      {validatingDriver}
+                    </ThemedText>
+                  </>
+                )}
+              </View>
+            </View>
+          )}
 
           {/* Ticket Information */}
           <View style={styles.ticketInfo}>
@@ -200,7 +279,7 @@ const styles = StyleSheet.create({
   },
   ticketCard: {
     backgroundColor: EarthColors.whiteBone,
-    borderRadius: 16,
+    borderRadius: 20,
     width: '100%',
     maxWidth: 400,
     overflow: 'hidden',
@@ -212,6 +291,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 8,
+  },
+  statusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  statusCompleted: {
+    backgroundColor: '#4CAF50',
+  },
+  statusMissed: {
+    backgroundColor: '#FF9800',
+  },
+  statusBannerText: {
+    color: EarthColors.whiteBone,
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
   qrSection: {
     backgroundColor: EarthColors.whiteBone,
@@ -226,6 +325,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 200,
     height: 200,
+    position: 'relative',
+  },
+  qrContainerDisabled: {
+    opacity: 0.5,
+  },
+  qrOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+  },
+  qrWarning: {
+    marginTop: 12,
+    fontSize: 13,
+    color: '#FF9800',
+    fontWeight: '600',
+    textAlign: 'center',
   },
   dashedLine: {
     borderTopWidth: 2,
@@ -233,6 +353,43 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     width: '100%',
     marginTop: 16,
+  },
+  validationBanner: {
+    backgroundColor: '#E8F5E9',
+    padding: 20,
+    borderLeftWidth: 5,
+    borderLeftColor: '#4CAF50',
+  },
+  validationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  validationTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#2E7D32',
+  },
+  validationDetails: {
+    gap: 8,
+  },
+  validationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  validationLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2E7D32',
+  },
+  validationValue: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#1B5E20',
+    marginLeft: 26,
   },
   ticketInfo: {
     padding: 20,

@@ -2,6 +2,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Header } from '@/components/ui/header';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { ThemedTextInput } from '@/components/ui/text-input';
 import { API_BASE_URL } from '@/constants/api';
 import { EarthColors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -26,7 +27,7 @@ export default function SearchScreen() {
   const [destination, setDestination] = useState('');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [departureDate, setDepartureDate] = useState('Hoy');
-  const [passengers, setPassengers] = useState('1');
+  const [passengers, setPassengers] = useState('');
   const [origins, setOrigins] = useState<string[]>([]);
   const [destinations, setDestinations] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,6 +108,13 @@ export default function SearchScreen() {
       return;
     }
 
+    // Validar que haya al menos 1 pasajero
+    const passengersCount = passengers.trim() === '' ? '1' : passengers;
+    if (parseInt(passengersCount) < 1) {
+      alert('Por favor ingresa al menos 1 pasajero');
+      return;
+    }
+
     // Format date to YYYY-MM-DD
     const formattedDate = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
 
@@ -116,7 +124,7 @@ export default function SearchScreen() {
         origin: origin,
         destination: destination,
         date: formattedDate,
-        passengers: passengers,
+        passengers: passengersCount,
       },
     });
   };
@@ -192,12 +200,23 @@ export default function SearchScreen() {
             <ThemedText lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.label}>
               Pasajeros
             </ThemedText>
-            <TouchableOpacity style={styles.selectField}>
-              <MaterialIcons name="person" size={20} color={EarthColors.blackSoft} />
-              <ThemedText lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.selectFieldText}>
-                {passengers}
-              </ThemedText>
-            </TouchableOpacity>
+            <View style={styles.inputWithIcons}>
+              <View style={styles.leftIcon}>
+                <MaterialIcons name="person" size={20} color={EarthColors.blackSoft} />
+              </View>
+              <ThemedTextInput
+                placeholder="Ingresa pasajeros"
+                value={passengers}
+                onChangeText={(text) => {
+                  // Solo permitir números
+                  const numericValue = text.replace(/[^0-9]/g, '');
+                  setPassengers(numericValue);
+                }}
+                keyboardType="number-pad"
+                style={styles.input}
+                containerStyle={styles.inputContainer}
+              />
+            </View>
           </View>
 
           {/* Search Button */}
@@ -269,7 +288,47 @@ export default function SearchScreen() {
 
       {/* Date Picker */}
       {showDatePicker && (
-        Platform.OS === 'ios' ? (
+        Platform.OS === 'web' ? (
+          <Modal visible={showDatePicker} transparent animationType="fade">
+            <View style={styles.modalContainer}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <ThemedText style={styles.modalTitle}>Selecciona Fecha</ThemedText>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <IconSymbol name="xmark" size={24} color={EarthColors.blackSoft} />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.webDateInputContainer}>
+                  {Platform.OS === 'web' && (
+                    // @ts-ignore - React Native Web supports HTML input elements
+                    React.createElement('input', {
+                      type: 'date',
+                      value: selectedDate.toISOString().split('T')[0],
+                      min: new Date().toISOString().split('T')[0],
+                      onChange: (e: any) => {
+                        if (e.target.value) {
+                          const date = new Date(e.target.value);
+                          setSelectedDate(date);
+                          setDepartureDate(formatDate(date));
+                          setShowDatePicker(false);
+                        }
+                      },
+                      style: {
+                        width: '100%',
+                        padding: '12px',
+                        fontSize: '16px',
+                        borderRadius: '10px',
+                        border: `1px solid ${EarthColors.grayInput || '#D1D5DB'}`,
+                        backgroundColor: EarthColors.whiteBone,
+                        fontFamily: 'inherit',
+                      },
+                    })
+                  )}
+                </View>
+              </View>
+            </View>
+          </Modal>
+        ) : Platform.OS === 'ios' ? (
           <Modal visible={showDatePicker} transparent animationType="slide">
             <View style={styles.modalContainer}>
               <View style={styles.modalContent}>
@@ -478,5 +537,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: EarthColors.beigeBone,
+  },
+  webDateInputContainer: {
+    padding: 20,
   },
 });

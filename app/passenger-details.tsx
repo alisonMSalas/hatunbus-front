@@ -8,6 +8,8 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import {
+    FlatList,
+    Modal,
     ScrollView,
     StyleSheet,
     TouchableOpacity,
@@ -18,7 +20,9 @@ interface PassengerInfo {
   fullName: string;
   identificationType: string;
   identificationNumber: string;
-  age: string;
+  email: string;
+  phone: string;
+  passengerType: 'ADULT' | 'CHILD' | 'SENIOR' | 'DISABLED';
 }
 
 export default function PassengerDetailsScreen() {
@@ -35,7 +39,9 @@ export default function PassengerDetailsScreen() {
       fullName: '',
       identificationType: 'Cédula de Identidad',
       identificationNumber: '',
-      age: '',
+      email: '',
+      phone: '',
+      passengerType: 'ADULT',
     }))
   );
 
@@ -44,13 +50,23 @@ export default function PassengerDetailsScreen() {
     Array.from({ length: passengersCount }, (_, index) => index === 0) // Solo el primero expandido por defecto
   );
 
+  // Estado para controlar qué modal de tipo de pasajero está abierto
+  const [showPassengerTypePicker, setShowPassengerTypePicker] = useState<number | null>(null);
+
   const identificationTypes = [
     'Cédula de Identidad',
     'Pasaporte',
     'Cédula de Extranjería',
   ];
 
-  const handlePassengerChange = (index: number, field: keyof PassengerInfo, value: string) => {
+  const passengerTypes = [
+    { value: 'ADULT', label: 'Adulto' },
+    { value: 'CHILD', label: 'Niño' },
+    { value: 'SENIOR', label: 'Adulto Mayor' },
+    { value: 'DISABLED', label: 'Discapacitado' },
+  ];
+
+  const handlePassengerChange = (index: number, field: keyof PassengerInfo, value: string | 'ADULT' | 'CHILD' | 'SENIOR' | 'DISABLED') => {
     const updatedPassengers = [...passengers];
     updatedPassengers[index] = {
       ...updatedPassengers[index],
@@ -66,26 +82,51 @@ export default function PassengerDetailsScreen() {
   };
 
   const handleSelectSeats = () => {
-    // Navegar a la pantalla de selección de asientos
+    // Verificar que todos los pasajeros tengan información completa
+    const allComplete = passengers.every(p =>
+      p.fullName &&
+      p.identificationNumber &&
+      p.email &&
+      p.phone
+    );
+
+    if (!allComplete) {
+      alert('Por favor completa la información de todos los pasajeros');
+      return;
+    }
+
+    // Navegar a la pantalla de selección de asientos pasando la info de pasajeros
     router.push({
       pathname: '/select-seats',
       params: {
         passengers: passengersCount.toString(),
+        passengersData: JSON.stringify(passengers), // Pasar todos los datos de pasajeros
         price: Array.isArray(params.price) ? params.price[0] : params.price || '25.00',
         tripId: Array.isArray(params.tripId) ? params.tripId[0] : params.tripId,
         operator: Array.isArray(params.operator) ? params.operator[0] : params.operator,
-        seatType: Array.isArray(params.seatType) ? params.seatType[0] : params.seatType,
         departureTime: Array.isArray(params.departureTime) ? params.departureTime[0] : params.departureTime,
         arrivalTime: Array.isArray(params.arrivalTime) ? params.arrivalTime[0] : params.arrivalTime,
+        busSeatsCount: Array.isArray(params.busSeatsCount) ? params.busSeatsCount[0] : params.busSeatsCount,
+        originStopId: Array.isArray(params.originStopId) ? params.originStopId[0] : params.originStopId,
+        destinationStopId: Array.isArray(params.destinationStopId) ? params.destinationStopId[0] : params.destinationStopId,
       },
     });
   };
 
   const getTicketStatus = (index: number) => {
     const passenger = passengers[index];
-    if (passenger.fullName && passenger.identificationNumber && passenger.age) {
+    const requiredFields = [
+      passenger.fullName,
+      passenger.identificationNumber,
+      passenger.email,
+      passenger.phone
+    ];
+
+    const filledFields = requiredFields.filter(field => field && field.trim() !== '').length;
+
+    if (filledFields === requiredFields.length) {
       return 'Completo';
-    } else if (passenger.fullName || passenger.identificationNumber || passenger.age) {
+    } else if (filledFields > 0) {
       return 'En progreso';
     }
     return 'Pendiente';
@@ -174,38 +215,80 @@ export default function PassengerDetailsScreen() {
 
                 {/* Identification Number Field */}
                 <View style={styles.fieldContainer}>
-                  <ThemedText 
-                    lightColor={EarthColors.earthDarker} 
-                    darkColor={EarthColors.beigeLight} 
+                  <ThemedText
+                    lightColor={EarthColors.earthDarker}
+                    darkColor={EarthColors.beigeLight}
                     style={styles.label}>
                     Número de Identificación
                   </ThemedText>
                   <ThemedTextInput
-                    placeholder="Ingresa el número"
+                    placeholder="Ingresa 10 dígitos"
                     value={passenger.identificationNumber}
                     onChangeText={(value) => handlePassengerChange(index, 'identificationNumber', value)}
                     keyboardType="numeric"
+                    maxLength={10}
                     containerStyle={styles.inputContainer}
                     placeholderTextColor={EarthColors.blackSoftOpacity || 'rgba(26, 26, 26, 0.6)'}
                   />
                 </View>
 
-                {/* Age Field */}
+                {/* Email Field */}
                 <View style={styles.fieldContainer}>
-                  <ThemedText 
-                    lightColor={EarthColors.earthDarker} 
-                    darkColor={EarthColors.beigeLight} 
+                  <ThemedText
+                    lightColor={EarthColors.earthDarker}
+                    darkColor={EarthColors.beigeLight}
                     style={styles.label}>
-                    Edad
+                    Email
                   </ThemedText>
                   <ThemedTextInput
-                    placeholder="Ingresa la edad"
-                    value={passenger.age}
-                    onChangeText={(value) => handlePassengerChange(index, 'age', value)}
-                    keyboardType="numeric"
+                    placeholder="ejemplo@correo.com"
+                    value={passenger.email}
+                    onChangeText={(value) => handlePassengerChange(index, 'email', value)}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
                     containerStyle={styles.inputContainer}
                     placeholderTextColor={EarthColors.blackSoftOpacity || 'rgba(26, 26, 26, 0.6)'}
                   />
+                </View>
+
+                {/* Phone Field */}
+                <View style={styles.fieldContainer}>
+                  <ThemedText
+                    lightColor={EarthColors.earthDarker}
+                    darkColor={EarthColors.beigeLight}
+                    style={styles.label}>
+                    Teléfono
+                  </ThemedText>
+                  <ThemedTextInput
+                    placeholder="0987654321"
+                    value={passenger.phone}
+                    onChangeText={(value) => handlePassengerChange(index, 'phone', value)}
+                    keyboardType="phone-pad"
+                    maxLength={10}
+                    containerStyle={styles.inputContainer}
+                    placeholderTextColor={EarthColors.blackSoftOpacity || 'rgba(26, 26, 26, 0.6)'}
+                  />
+                </View>
+
+                {/* Passenger Type Field */}
+                <View style={styles.fieldContainer}>
+                  <ThemedText
+                    lightColor={EarthColors.earthDarker}
+                    darkColor={EarthColors.beigeLight}
+                    style={styles.label}>
+                    Tipo de Pasajero
+                  </ThemedText>
+                  <TouchableOpacity 
+                    style={styles.selectField}
+                    onPress={() => setShowPassengerTypePicker(index)}>
+                    <ThemedText
+                      lightColor={EarthColors.earthDarker}
+                      darkColor={EarthColors.beigeLight}
+                      style={styles.selectFieldText}>
+                      {passengerTypes.find(type => type.value === passenger.passengerType)?.label || 'Adulto'}
+                    </ThemedText>
+                    <IconSymbol name="chevron.down" size={20} color={EarthColors.earthDarker} />
+                  </TouchableOpacity>
                 </View>
               </View>
             )}
@@ -228,6 +311,42 @@ export default function PassengerDetailsScreen() {
           <MaterialIcons name="chevron-right" size={24} color={EarthColors.beigeBone} />
         </TouchableOpacity>
       </View>
+
+      {/* Passenger Type Picker Modal */}
+      {showPassengerTypePicker !== null && (
+        <Modal 
+          visible={showPassengerTypePicker !== null} 
+          transparent 
+          animationType="slide"
+          onRequestClose={() => setShowPassengerTypePicker(null)}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <ThemedText style={styles.modalTitle}>Selecciona Tipo de Pasajero</ThemedText>
+                <TouchableOpacity onPress={() => setShowPassengerTypePicker(null)}>
+                  <IconSymbol name="xmark" size={24} color={EarthColors.blackSoft} />
+                </TouchableOpacity>
+              </View>
+              <FlatList
+                data={passengerTypes}
+                keyExtractor={(item) => item.value}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.modalItem}
+                    onPress={() => {
+                      if (showPassengerTypePicker !== null) {
+                        handlePassengerChange(showPassengerTypePicker, 'passengerType', item.value);
+                        setShowPassengerTypePicker(null);
+                      }
+                    }}>
+                    <ThemedText style={styles.modalItemText}>{item.label}</ThemedText>
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
     </ThemedView>
   );
 }
@@ -344,6 +463,42 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginRight: 8,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: EarthColors.whiteBone,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingVertical: 20,
+    maxHeight: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: EarthColors.grayInput || '#D1D5DB',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: EarthColors.earthDarker,
+  },
+  modalItem: {
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: EarthColors.grayInput || '#D1D5DB',
+  },
+  modalItemText: {
+    fontSize: 16,
+    color: EarthColors.earthDarker,
   },
 });
 

@@ -2,64 +2,144 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Header } from '@/components/ui/header';
 import { EarthColors } from '@/constants/theme';
+import { API_BASE_URL } from '@/constants/api';
+import { getJsonWithAuth } from '@/services/api';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router, useLocalSearchParams } from 'expo-router';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Image,
     ScrollView,
     StyleSheet,
     TouchableOpacity,
     View,
+    ActivityIndicator,
 } from 'react-native';
+
+interface TripDetails {
+  id: string;
+  cooperative: string;
+  busUnitNumber: string;
+  busPlate: string;
+  busChassisBrand: string;
+  busBodyBrand: string;
+  busSeatsCount: number;
+  busPhotoUrl: string | null;
+  driverName: string;
+  departureTime: string;
+  arrivalTime: string;
+  routeName: string;
+  routeOrigin: string;
+  routeDestination: string;
+  availableSeats: number;
+  occupiedSeats: number;
+}
 
 export default function TripDetailsScreen() {
   const params = useLocalSearchParams();
+  const [tripData, setTripData] = useState<TripDetails | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Datos del viaje - en el futuro vendrán de la API
-  const tripData = {
-    cooperative: Array.isArray(params.operator) ? params.operator[0] : params.operator || 'HatunBus',
-    busNumber: 'Bus #123',
-    licensePlate: 'ABC-456',
-    chassis: 'XYZ789',
-    bodyType: Array.isArray(params.seatType) ? params.seatType[0] : params.seatType || 'Double Decker',
-    departureTime: Array.isArray(params.departureTime) ? params.departureTime[0] : params.departureTime || '10:00 AM',
-    arrivalTime: Array.isArray(params.arrivalTime) ? params.arrivalTime[0] : params.arrivalTime || '6:00 PM',
-    amenities: 'WiFi, Asientos Reclinables, Baño',
-    busImage: require('@/assets/images/bus-placeholder.jpg'), // Placeholder - reemplazar con imagen real del bus
+  const tripId = Array.isArray(params.tripId) ? params.tripId[0] : params.tripId;
+
+  useEffect(() => {
+    loadTripDetails();
+  }, []);
+
+  const loadTripDetails = async () => {
+    try {
+      setLoading(true);
+      const data = await getJsonWithAuth(`${API_BASE_URL}/viajes/${tripId}`);
+
+      const formattedTrip: TripDetails = {
+        id: data.id,
+        cooperative: data.frequency?.cooperativeName || 'Cooperativa',
+        busUnitNumber: data.busUnitNumber ? `Bus #${data.busUnitNumber}` : data.busPlate,
+        busPlate: data.busPlate || 'N/A',
+        busChassisBrand: data.busChassisBrand || 'N/A',
+        busBodyBrand: data.busBodyBrand || 'N/A',
+        busSeatsCount: data.busSeatsCount || 0,
+        busPhotoUrl: data.busPhotoUrl,
+        driverName: data.driverName || 'N/A',
+        departureTime: formatTime(data.scheduledDepartureTime),
+        arrivalTime: formatTime(data.scheduledArrivalTime),
+        routeName: data.routeName || '',
+        routeOrigin: data.routeOrigin || '',
+        routeDestination: data.routeDestination || '',
+        availableSeats: data.availableSeats || 0,
+        occupiedSeats: data.occupiedSeats || 0,
+      };
+
+      setTripData(formattedTrip);
+    } catch (error) {
+      console.error('Error loading trip details:', error);
+      alert('Error al cargar los detalles del viaje');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatTime = (datetime: string) => {
+    if (!datetime) return '--:--';
+    const date = new Date(datetime);
+    return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   };
 
   const handleSelectSeats = () => {
-    // Obtener el número de pasajeros desde los parámetros de búsqueda originales
-    const passengers = Array.isArray(params.passengers) 
-      ? params.passengers[0] 
+    if (!tripData) return;
+
+    const passengers = Array.isArray(params.passengers)
+      ? params.passengers[0]
       : params.passengers || '1';
-    
-    // Navegar a la pantalla de información de pasajeros
+
     router.push({
       pathname: '/passenger-details',
       params: {
         passengers: passengers,
-        tripId: Array.isArray(params.tripId) ? params.tripId[0] : params.tripId,
-        operator: Array.isArray(params.operator) ? params.operator[0] : params.operator,
-        seatType: Array.isArray(params.seatType) ? params.seatType[0] : params.seatType,
+        tripId: tripData.id,
+        operator: tripData.cooperative,
         price: Array.isArray(params.price) ? params.price[0] : params.price,
-        departureTime: Array.isArray(params.departureTime) ? params.departureTime[0] : params.departureTime,
-        arrivalTime: Array.isArray(params.arrivalTime) ? params.arrivalTime[0] : params.arrivalTime,
+        departureTime: tripData.departureTime,
+        arrivalTime: tripData.arrivalTime,
+        busSeatsCount: tripData.busSeatsCount.toString(),
+        originStopId: Array.isArray(params.originStopId) ? params.originStopId[0] : params.originStopId,
+        destinationStopId: Array.isArray(params.destinationStopId) ? params.destinationStopId[0] : params.destinationStopId,
       },
     });
   };
 
+  if (loading) {
+    return (
+      <ThemedView style={styles.container}>
+        <Header title="Detalles del Viaje" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={EarthColors.blackSoft} />
+          <ThemedText style={styles.loadingText}>Cargando detalles...</ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  if (!tripData) {
+    return (
+      <ThemedView style={styles.container}>
+        <Header title="Detalles del Viaje" />
+        <View style={styles.loadingContainer}>
+          <ThemedText style={styles.loadingText}>No se pudo cargar la información del viaje</ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+
   return (
     <ThemedView style={styles.container}>
-      {/* Header */}
       <Header title="Detalles del Viaje" />
-      
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
-        
+
         {/* Cooperative Section */}
         <View style={styles.section}>
           <ThemedText lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.sectionTitle}>
@@ -75,7 +155,7 @@ export default function TripDetailsScreen() {
                   {tripData.cooperative}
                 </ThemedText>
                 <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.busNumber}>
-                  {tripData.busNumber}
+                  {tripData.busUnitNumber}
                 </ThemedText>
               </View>
             </View>
@@ -83,13 +163,15 @@ export default function TripDetailsScreen() {
         </View>
 
         {/* Bus Image */}
-        <View style={styles.busImageContainer}>
-          <Image
-            source={tripData.busImage}
-            style={styles.busImage}
-            resizeMode="cover"
-          />
-        </View>
+        {tripData.busPhotoUrl && (
+          <View style={styles.busImageContainer}>
+            <Image
+              source={{ uri: tripData.busPhotoUrl }}
+              style={styles.busImage}
+              resizeMode="cover"
+            />
+          </View>
+        )}
 
         {/* Bus Information Section */}
         <View style={styles.section}>
@@ -102,23 +184,31 @@ export default function TripDetailsScreen() {
                 Placa
               </ThemedText>
               <ThemedText lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.busInfoValue}>
-                {tripData.licensePlate}
+                {tripData.busPlate}
               </ThemedText>
             </View>
             <View style={styles.busInfoCard}>
               <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.busInfoLabel}>
-                Chasis
+                Asientos
               </ThemedText>
               <ThemedText lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.busInfoValue}>
-                {tripData.chassis}
+                {tripData.busSeatsCount}
               </ThemedText>
             </View>
-            <View style={[styles.busInfoCard, styles.busInfoCardFull]}>
+            <View style={styles.busInfoCard}>
               <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.busInfoLabel}>
-                Tipo de Carrocería
+                Marca Chasis
               </ThemedText>
               <ThemedText lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.busInfoValue}>
-                {tripData.bodyType}
+                {tripData.busChassisBrand}
+              </ThemedText>
+            </View>
+            <View style={styles.busInfoCard}>
+              <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.busInfoLabel}>
+                Marca Carrocería
+              </ThemedText>
+              <ThemedText lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.busInfoValue}>
+                {tripData.busBodyBrand}
               </ThemedText>
             </View>
           </View>
@@ -130,6 +220,14 @@ export default function TripDetailsScreen() {
             Detalles del Viaje
           </ThemedText>
           <View style={styles.card}>
+            <View style={styles.tripDetailRow}>
+              <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.tripDetailLabel}>
+                Ruta
+              </ThemedText>
+              <ThemedText lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.tripDetailValue}>
+                {tripData.routeOrigin} → {tripData.routeDestination}
+              </ThemedText>
+            </View>
             <View style={styles.tripDetailRow}>
               <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.tripDetailLabel}>
                 Hora de Salida
@@ -146,12 +244,20 @@ export default function TripDetailsScreen() {
                 {tripData.arrivalTime}
               </ThemedText>
             </View>
-            <View style={[styles.tripDetailRow, styles.tripDetailRowLast]}>
+            <View style={styles.tripDetailRow}>
               <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.tripDetailLabel}>
-                Amenidades
+                Conductor
               </ThemedText>
               <ThemedText lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.tripDetailValue}>
-                {tripData.amenities}
+                {tripData.driverName}
+              </ThemedText>
+            </View>
+            <View style={[styles.tripDetailRow, styles.tripDetailRowLast]}>
+              <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.tripDetailLabel}>
+                Asientos Disponibles
+              </ThemedText>
+              <ThemedText lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.tripDetailValue}>
+                {tripData.availableSeats} / {tripData.busSeatsCount}
               </ThemedText>
             </View>
           </View>
@@ -175,6 +281,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: EarthColors.grayLight || '#F5F5F5',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: EarthColors.earthDark,
   },
   scrollView: {
     flex: 1,

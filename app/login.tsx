@@ -87,18 +87,6 @@ export default function LoginScreen() {
 
             <Button title={isLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'} onPress={handleLogin} style={styles.loginButton} disabled={isLoading} />
 
-            <View style={styles.testUsersContainer}>
-              <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.testUsersTitle}>
-                Usuarios de prueba:
-              </ThemedText>
-              <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.testUsersText}>
-                Pasajero: pasajero@hatunbus.com / 123456
-              </ThemedText>
-              <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.testUsersText}>
-                Conductor: conductor@hatunbus.com / 123456
-              </ThemedText>
-            </View>
-
             <ThemedView style={styles.signUpContainer}>
               <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.beigeMedium} style={styles.signUpText}>
                 ¿Nuevo en HatunBus?{' '}
@@ -192,24 +180,6 @@ const styles = StyleSheet.create({
   },
   signUpLink: {
     fontSize: 14,
-  },
-  testUsersContainer: {
-    marginTop: 24,
-    padding: 16,
-    backgroundColor: EarthColors.beigeLight || '#F5F0E8',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: EarthColors.beigeMedium || '#E8DFD5',
-  },
-  testUsersTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  testUsersText: {
-    fontSize: 12,
-    marginBottom: 4,
-    fontFamily: 'monospace',
   },
 });
 

@@ -1,10 +1,13 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Header } from '@/components/ui/header';
+import { API_BASE_URL } from '@/constants/api';
 import { EarthColors } from '@/constants/theme';
+import { getJsonWithAuth } from '@/services/api';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+    ActivityIndicator,
     ScrollView,
     StyleSheet,
     TouchableOpacity,
@@ -14,7 +17,8 @@ import {
 type SeatStatus = 'available' | 'unavailable' | 'selected' | 'others';
 
 interface Seat {
-  number: number;
+  id: string;
+  number: string; // V1, P1, V2, P2, etc.
   status: SeatStatus;
   passengerInitials?: string;
 }
@@ -22,73 +26,94 @@ interface Seat {
 interface PassengerSeat {
   passengerIndex: number;
   passengerName: string;
-  seatNumber: number | null;
+  seatNumber: string | null; // V1, P1, V2, P2, etc.
+}
+
+interface PassengerInfo {
+  fullName: string;
+  identificationType: string;
+  identificationNumber: string;
+  email: string;
+  phone: string;
+  passengerType: 'ADULT' | 'CHILD' | 'SENIOR' | 'DISABLED';
 }
 
 export default function SelectSeatsScreen() {
   const params = useLocalSearchParams();
-  
+
   // Obtener el número de pasajeros desde los parámetros
   const passengersCount = parseInt(
     Array.isArray(params.passengers) ? params.passengers[0] : params.passengers || '1'
   );
+
+  // Parsear datos de pasajeros
+  const passengersData: PassengerInfo[] = params.passengersData
+    ? JSON.parse(Array.isArray(params.passengersData) ? params.passengersData[0] : params.passengersData)
+    : [];
+
+  const tripId = Array.isArray(params.tripId) ? params.tripId[0] : params.tripId;
+  const busSeatsCount = parseInt(
+    Array.isArray(params.busSeatsCount) ? params.busSeatsCount[0] : params.busSeatsCount || '0'
+  );
+
+  // Estados
+  const [loading, setLoading] = useState(true);
+  const [seats, setSeats] = useState<Seat[]>([]);
+  const [passengerSeats, setPassengerSeats] = useState<PassengerSeat[]>([]);
+  const [activePassengerIndex, setActivePassengerIndex] = useState<number>(0);
 
   // Función para obtener iniciales de un nombre
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
 
-  // Generar nombres de pasajeros de ejemplo (en el futuro vendrán de passenger-details)
-  const passengerNames = Array.from({ length: passengersCount }, (_, index) => 
-    index === 0 ? 'John Doe' : index === 1 ? 'Jane Smith' : `Pasajero ${index + 1}`
-  );
-
-  // Estado inicial para asientos asignados
-  const initialPassengerSeats: PassengerSeat[] = passengerNames.map((name, index) => ({
-    passengerIndex: index,
-    passengerName: name,
-    seatNumber: index === 0 ? 15 : index === 1 && passengersCount >= 2 ? 6 : null, // Primer pasajero tiene asiento 15, segundo tiene asiento 6 si hay 2+ pasajeros
-  }));
-
-  // Estado para asientos asignados
-  const [passengerSeats, setPassengerSeats] = useState<PassengerSeat[]>(initialPassengerSeats);
-
-  // Estado para el pasajero actualmente seleccionado
-  const [activePassengerIndex, setActivePassengerIndex] = useState<number>(0);
-
   // Precio por asiento
   const pricePerSeat = parseFloat(
     Array.isArray(params.price) ? params.price[0] : params.price || '25.00'
   );
 
-  // Inicializar el mapa de asientos con los asientos ya asignados
-  const initialSeats: Seat[] = [
-    { number: 1, status: 'available' },
-    { number: 2, status: 'available' },
-    { number: 3, status: 'available' },
-    { number: 4, status: 'available' },
-    { number: 5, status: 'available' },
-    { number: 6, status: passengersCount >= 2 ? 'selected' : 'others', passengerInitials: passengersCount >= 2 ? getInitials(passengerNames[1]) : 'JS' }, // Segundo pasajero o asiento de otro
-    { number: 7, status: 'available' },
-    { number: 8, status: 'available' },
-    { number: 9, status: 'available' },
-    { number: 10, status: 'available' },
-    { number: 11, status: 'unavailable' },
-    { number: 12, status: 'available' },
-    { number: 13, status: 'available' },
-    { number: 14, status: 'available' },
-    { number: 15, status: 'selected', passengerInitials: getInitials(passengerNames[0]) }, // Primer pasajero (John Doe)
-    { number: 16, status: 'available' },
-    { number: 17, status: 'available' },
-    { number: 18, status: 'available' },
-    { number: 19, status: 'available' },
-    { number: 20, status: 'available' },
-  ];
+  // Cargar asientos del backend
+  useEffect(() => {
+    loadSeats();
+  }, []);
 
-  // Mapa de asientos - 20 asientos en 5 filas, 4 columnas con pasillo
-  const [seats, setSeats] = useState<Seat[]>(initialSeats);
+  const loadSeats = async () => {
+    try {
+      setLoading(true);
 
-  const handleSeatSelect = (seatNumber: number) => {
+      const data = await getJsonWithAuth(`${API_BASE_URL}/viajes/${tripId}/asientos-disponibles`);
+
+      // Mapear asientos del backend (nuevo formato lógico)
+      const mappedSeats: Seat[] = data.map((seat: any, index: number) => {
+        const seatStatus: SeatStatus = seat.status === 'available' ? 'available' : 'others';
+
+        return {
+          id: seat.seatNumber, // Usamos seatNumber como ID (V1, P1, etc.)
+          number: seat.seatNumber, // V1, P1, V2, P2, etc.
+          status: seatStatus,
+          passengerInitials: undefined,
+        };
+      });
+
+      setSeats(mappedSeats);
+
+      // Inicializar pasajeros sin asientos asignados
+      const initialPassengerSeats: PassengerSeat[] = passengersData.map((passenger, index) => ({
+        passengerIndex: index,
+        passengerName: passenger.fullName,
+        seatNumber: null,
+      }));
+
+      setPassengerSeats(initialPassengerSeats);
+    } catch (error) {
+      console.error('Error loading seats:', error);
+      alert('Error al cargar los asientos del viaje');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSeatSelect = (seatNumber: string) => {
     const seat = seats.find(s => s.number === seatNumber);
     
     // No permitir seleccionar asientos no disponibles o de otros
@@ -148,6 +173,7 @@ export default function SelectSeatsScreen() {
     // Actualizar el asiento del pasajero activo
     const updatedPassengerSeats = [...passengerSeats];
     updatedPassengerSeats[activePassengerIndex].seatNumber = seatNumber;
+    updatedPassengerSeats[activePassengerIndex].tripSeatId = seat.tripSeatId || null;
     setPassengerSeats(updatedPassengerSeats);
   };
 
@@ -193,40 +219,111 @@ export default function SelectSeatsScreen() {
   const handleConfirmSeats = () => {
     // Verificar que todos los pasajeros tengan asiento asignado
     const allSeatsAssigned = passengerSeats.every(p => p.seatNumber !== null);
-    
+
     if (!allSeatsAssigned) {
-      // Mostrar mensaje de que faltan asientos por asignar
-      console.log('Faltan asientos por asignar');
+      alert('Por favor asigna un asiento a cada pasajero');
       return;
     }
 
-    console.log('Asientos confirmados:', passengerSeats);
-    
-    // Navegar a la pantalla de método de pago
+    // Verificar que tengamos los IDs de paradas
+    const originStopId = params.originStopId as string;
+    const destinationStopId = params.destinationStopId as string;
+
+    console.log('=== DEBUG STOPS ===');
+    console.log('Origin Stop ID:', originStopId);
+    console.log('Destination Stop ID:', destinationStopId);
+    console.log('Params completos:', params);
+
+    if (!originStopId || !destinationStopId || originStopId === '' || destinationStopId === '') {
+      alert('Error: No se encontraron las paradas del viaje. Por favor intenta de nuevo desde la búsqueda.');
+      console.error('IDs de paradas faltantes!');
+      return;
+    }
+
+    // Preparar datos de tickets para enviar
+    const ticketsData = passengerSeats.map((ps, index) => {
+      const passengerInfo = passengersData[index];
+      return {
+        tripId: tripId,
+        seatNumber: ps.seatNumber,
+        passengerName: passengerInfo.fullName,
+        passengerIdCard: passengerInfo.identificationNumber,
+        passengerEmail: passengerInfo.email || '',
+        passengerPhone: passengerInfo.phone || '',
+        passengerType: passengerInfo.passengerType,
+        originStopId: originStopId,
+        destinationStopId: destinationStopId,
+      };
+    });
+
+    console.log('Tickets Data a enviar:', ticketsData);
+
+    // Navegar a la pantalla de método de pago con los datos de tickets
     router.push({
       pathname: '/payment-method',
       params: {
-        passengers: passengersCount.toString(),
-        price: pricePerSeat.toString(),
+        ticketsData: JSON.stringify(ticketsData),
         totalPrice: getTotalPrice(),
-        selectedSeats: getSelectedSeats(),
-        tripId: Array.isArray(params.tripId) ? params.tripId[0] : params.tripId,
-        operator: Array.isArray(params.operator) ? params.operator[0] : params.operator,
-        seatType: Array.isArray(params.seatType) ? params.seatType[0] : params.seatType,
-        departureTime: Array.isArray(params.departureTime) ? params.departureTime[0] : params.departureTime,
-        arrivalTime: Array.isArray(params.arrivalTime) ? params.arrivalTime[0] : params.arrivalTime,
       },
     });
   };
 
-  // Organizar asientos en filas (5 filas, 4 columnas con pasillo)
-  const seatRows = [
-    [1, 2, null, 3, 4],
-    [5, 6, null, 7, 8],
-    [9, 10, null, 11, 12],
-    [13, 14, null, 15, 16],
-    [17, 18, null, 19, 20],
-  ];
+  // Organizar asientos en filas: V1 P1 [pasillo] P2 V2
+  const getSeatRows = () => {
+    if (seats.length === 0) {
+      return [];
+    }
+
+    const rows: (string | null)[][] = [];
+
+    // Calcular número de filas (cada fila tiene 4 asientos: 2V + 2P)
+    const totalRows = Math.ceil(busSeatsCount / 4);
+
+    for (let i = 0; i < totalRows; i++) {
+      const seatIndex = i * 2 + 1; // 1, 3, 5, 7, ...
+
+      const v1 = seats.find(s => s.number === `V${seatIndex}`);
+      const v2 = seats.find(s => s.number === `V${seatIndex + 1}`);
+      const p1 = seats.find(s => s.number === `P${seatIndex}`);
+      const p2 = seats.find(s => s.number === `P${seatIndex + 1}`);
+
+      const row = [
+        v1?.number || null,  // Ventana izquierda
+        p1?.number || null,  // Pasillo izquierdo
+        null,                // Pasillo central
+        p2?.number || null,  // Pasillo derecho
+        v2?.number || null,  // Ventana derecha
+      ];
+      rows.push(row);
+    }
+
+    return rows;
+  };
+
+  if (loading) {
+    return (
+      <ThemedView style={styles.container}>
+        <Header title="Seleccionar Asientos" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={EarthColors.blackSoft} />
+          <ThemedText style={styles.loadingText}>Cargando asientos...</ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  if (seats.length === 0) {
+    return (
+      <ThemedView style={styles.container}>
+        <Header title="Seleccionar Asientos" />
+        <View style={styles.loadingContainer}>
+          <ThemedText style={styles.loadingText}>
+            No hay asientos disponibles para este viaje
+          </ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
 
   return (
     <ThemedView style={styles.container}>
@@ -297,7 +394,7 @@ export default function SelectSeatsScreen() {
           </View>
           
           <View style={styles.seatMap}>
-            {seatRows.map((row, rowIndex) => (
+            {getSeatRows().map((row, rowIndex) => (
               <View key={rowIndex} style={styles.seatRow}>
                 {row.map((seatNum, colIndex) => {
                   if (seatNum === null) {
@@ -439,6 +536,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: EarthColors.grayLight || '#F5F5F5',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: EarthColors.earthDark,
   },
   scrollView: {
     flex: 1,

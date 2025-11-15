@@ -1,75 +1,278 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Header } from '@/components/ui/header';
+import { API_BASE_URL } from '@/constants/api';
 import { EarthColors } from '@/constants/theme';
+import { useAuth } from '@/contexts/AuthContext';
+import { postJsonWithAuth } from '@/services/api';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import * as FileSystem from 'expo-file-system';
+import * as ImagePicker from 'expo-image-picker';
+import * as WebBrowser from 'expo-web-browser';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    Image,
-    ScrollView,
-    StyleSheet,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Image,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
-type PaymentMethod = 'bank' | 'credit' | null;
+type PaymentMethod = 'transfer' | 'paypal' | null;
 
 export default function PaymentMethodScreen() {
   const params = useLocalSearchParams();
+  const { user } = useAuth();
+
+  const ticketsData = params.ticketsData ? JSON.parse(params.ticketsData as string) : [];
+  const totalPrice = params.totalPrice as string;
+  const tripId = params.tripId as string;
+  
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(null);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
-  
-  // Generar un ID de reserva de ejemplo (en el futuro vendrá de la API)
-  const bookingId = 'HB-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+  const [isLoading, setIsLoading] = useState(false);
+  const [waitingForPayment, setWaitingForPayment] = useState(false);
 
   const handleMethodSelect = (method: PaymentMethod) => {
     if (selectedMethod === method) {
-      // Si se hace clic en el método ya seleccionado, colapsarlo
       setSelectedMethod(null);
     } else {
       setSelectedMethod(method);
+      setUploadedImage(null); // Limpiar imagen al cambiar método
     }
   };
 
-  const handleUploadImage = () => {
-    // Aquí irá la lógica para subir la imagen usando expo-image-picker
-    // Por ahora, simulamos una imagen cargada
-    console.log('Subir imagen de comprobante');
-    // En una implementación real, usarías:
-    // import * as ImagePicker from 'expo-image-picker';
-    // const result = await ImagePicker.launchImageLibraryAsync({...});
-    // if (!result.canceled) { setUploadedImage(result.assets[0].uri); }
+  const handleUploadImage = async () => {
+    try {
+      // Pedir permisos
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permisos requeridos', 'Necesitamos acceso a tu galería para subir el comprobante');
+        return;
+      }
+
+      // Abrir selector de imagen
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.7,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setUploadedImage(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Error al seleccionar imagen:', error);
+      Alert.alert('Error', 'No se pudo cargar la imagen');
+    }
   };
 
   const handleRemoveImage = () => {
     setUploadedImage(null);
   };
 
-  const handleContinue = () => {
-    console.log('handleContinue llamado');
-    console.log('selectedMethod:', selectedMethod);
-    console.log('uploadedImage:', uploadedImage);
-    
+  const handleContinue = async () => {
     if (!selectedMethod) {
-      console.log('No hay método seleccionado');
-      alert('Por favor selecciona un método de pago');
+      Alert.alert('Error', 'Por favor selecciona un método de pago');
       return;
     }
-    
-    // Para tarjeta de crédito, no requerimos comprobante
-    // Para depósito bancario, validamos que se haya subido el comprobante
-    if (selectedMethod === 'bank' && !uploadedImage) {
-      console.log('Debe subir el comprobante de pago para depósito bancario');
-      alert('Por favor sube el comprobante de pago');
+
+    if (!user?.id) {
+      Alert.alert('Error', 'No se encontró el usuario. Por favor inicia sesión nuevamente.');
       return;
     }
-    
-    console.log('Navegando a tickets...');
-    
-    // Navegar a la pantalla de tickets usando replace para reemplazar el stack
-    // Esto evitará que el usuario pueda volver a la pantalla de pago
-    router.replace('/(tabs)/tickets');
+
+    if (selectedMethod === 'transfer' && !uploadedImage) {
+      Alert.alert('Error', 'Por favor sube el comprobante de pago');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      if (selectedMethod === 'transfer') {
+        // Para TRANSFERENCIA: Crear la compra inmediatamente
+        const purchaseData = await postJsonWithAuth(`${API_BASE_URL}/compras`, {
+          buyerUserId: user.id,
+          purchaseType: 'ONLINE',
+          paymentMethod: 'TRANSFER',
+          tickets: ticketsData,
+        });
+
+        const purchaseId = purchaseData.id;
+        await handleTransferPayment(purchaseId);
+
+        // Mostrar mensaje de éxito para transferencia
+        Alert.alert(
+          'Pago procesado',
+          'Tu comprobante ha sido enviado. El ticket estará disponible una vez que sea aprobado por un oficinista.'
+        );
+
+        // Redirigir automáticamente a la pantalla de tickets
+        setTimeout(() => {
+          router.replace('/(tabs)/tickets');
+        }, 1500);
+      } else if (selectedMethod === 'paypal') {
+        // Para PAYPAL: NO crear compra aún, solo iniciar PayPal
+        // La compra se creará cuando se capture el pago
+        await initiatePayPalPayment();
+      }
+    } catch (error: any) {
+      console.error('Error al procesar pago:', error);
+      Alert.alert('Error', error.message || 'No se pudo procesar el pago');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleTransferPayment = async (purchaseId: string) => {
+    if (!uploadedImage) return;
+
+    // Convertir imagen a base64
+    const base64 = await FileSystem.readAsStringAsync(uploadedImage, {
+      encoding: 'base64' as any,
+    });
+
+    // Enviar al backend con autenticación
+    await postJsonWithAuth(`${API_BASE_URL}/payments/upload-receipt`, {
+      purchaseId,
+      receiptImageBase64: base64,
+    });
+  };
+
+  const checkPaymentStatus = async (paypalOrderId: string): Promise<boolean> => {
+    try {
+      // Intentar capturar el pago automáticamente
+      // Ahora enviamos buyerUserId y tickets en lugar de purchaseId
+      const captureResponse = await postJsonWithAuth(`${API_BASE_URL}/payments/paypal/capture`, {
+        paypalOrderId: paypalOrderId,
+        buyerUserId: user?.id,
+        tickets: ticketsData,
+      });
+
+      console.log('✅ Payment captured successfully!');
+      return true;
+    } catch (error: any) {
+      // Si falla, el pago aún no está completo (esto es normal mientras el usuario paga)
+      // 412 = ORDER_NOT_APPROVED (esperado mientras el usuario completa el pago)
+      // Solo loguear si es un error diferente
+      const errorStatus = error.status || error.response?.status;
+      const errorMessage = error.message || '';
+
+      if (errorStatus !== 412 && !errorMessage.includes('ORDER_NOT_APPROVED')) {
+        console.log('⚠️ Unexpected error while checking payment:', errorMessage);
+      }
+      // No mostrar nada si es 412 o ORDER_NOT_APPROVED (usuario aún no ha completado el pago)
+      return false;
+    }
+  };
+
+  const initiatePayPalPayment = async () => {
+    try {
+      // Solicitar al backend que cree una orden de PayPal
+      // Ya NO enviamos purchaseId, solo buyerUserId, amount y tickets
+      const response = await postJsonWithAuth(`${API_BASE_URL}/payments/paypal/create-order`, {
+        buyerUserId: user?.id,
+        amount: totalPrice,
+        tickets: ticketsData,
+      });
+
+      if (response.approvalUrl) {
+        // Abrir PayPal en el navegador (no esperamos el resultado)
+        WebBrowser.openBrowserAsync(response.approvalUrl);
+
+        console.log('PayPal browser opened, starting payment monitoring...');
+
+        // Mostrar indicador de espera
+        setWaitingForPayment(true);
+        Alert.alert(
+          'Esperando pago',
+          'Completa el pago en PayPal. El sistema detectará automáticamente cuando finalices.',
+          [{ text: 'Entendido' }]
+        );
+
+        // Iniciar monitoreo del estado del pago cada 3 segundos
+        const maxAttempts = 60; // 3 minutos máximo (60 * 3 segundos)
+        let attempts = 0;
+        let paymentCompleted = false;
+
+        const checkInterval = setInterval(async () => {
+          attempts++;
+          // Solo loguear cada 10 intentos para no saturar la consola
+          if (attempts % 10 === 0) {
+            console.log(`🔍 Esperando pago... ${attempts * 3} segundos`);
+          }
+
+          // Verificar si el pago se completó
+          const completed = await checkPaymentStatus(response.orderId);
+
+          if (completed) {
+            paymentCompleted = true;
+            clearInterval(checkInterval);
+            setIsLoading(false);
+            setWaitingForPayment(false);
+
+            // Mostrar mensaje de éxito
+            Alert.alert('¡Pago exitoso!', 'Tu pago ha sido procesado. Redirigiendo a tus tickets...');
+
+            // Redirigir a tickets
+            setTimeout(() => {
+              router.replace('/(tabs)/tickets');
+            }, 1500);
+          } else if (attempts >= maxAttempts) {
+            // Timeout: preguntar manualmente
+            clearInterval(checkInterval);
+            setIsLoading(false);
+            setWaitingForPayment(false);
+
+            Alert.alert(
+              'Verificar pago',
+              '¿Completaste el pago en PayPal? No pudimos detectarlo automáticamente.',
+              [
+                {
+                  text: 'No',
+                  onPress: () => {
+                    Alert.alert('Pago cancelado', 'Puedes intentar nuevamente cuando estés listo.');
+                  },
+                  style: 'cancel',
+                },
+                {
+                  text: 'Sí, lo completé',
+                  onPress: async () => {
+                    // Intentar capturar una vez más
+                    try {
+                      await postJsonWithAuth(`${API_BASE_URL}/payments/paypal/capture`, {
+                        paypalOrderId: response.orderId,
+                        buyerUserId: user?.id,
+                        tickets: ticketsData,
+                      });
+
+                      Alert.alert('Pago procesado', 'Tu pago ha sido confirmado.');
+                      setTimeout(() => {
+                        router.replace('/(tabs)/tickets');
+                      }, 1500);
+                    } catch (error: any) {
+                      console.error('Error al capturar pago:', error);
+                      Alert.alert('Error', 'No se pudo completar el pago. Contacta con soporte.');
+                    }
+                  },
+                },
+              ]
+            );
+          }
+        }, 3000); // Verificar cada 3 segundos
+      } else {
+        throw new Error('No se recibió URL de aprobación de PayPal');
+      }
+    } catch (error: any) {
+      console.error('Error al iniciar pago de PayPal:', error);
+      Alert.alert('Error', 'No se pudo iniciar el pago con PayPal');
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -96,9 +299,9 @@ export default function PaymentMethodScreen() {
             <TouchableOpacity
               style={[
                 styles.paymentCard,
-                selectedMethod === 'bank' && styles.paymentCardSelected
+                selectedMethod === 'transfer' && styles.paymentCardSelected
               ]}
-              onPress={() => handleMethodSelect('bank')}
+              onPress={() => handleMethodSelect('transfer')}
               activeOpacity={0.7}>
               <View style={styles.paymentCardLeft}>
                 <View style={styles.paymentIcon}>
@@ -109,102 +312,26 @@ export default function PaymentMethodScreen() {
                     lightColor={EarthColors.earthDarker} 
                     darkColor={EarthColors.beigeLight} 
                     style={styles.paymentTitle}>
-                    Depósito/Transferencia Bancaria
+                    Transferencia Bancaria
                   </ThemedText>
                   <ThemedText 
                     lightColor={EarthColors.earthDark} 
                     darkColor={EarthColors.grayEarth} 
                     style={styles.paymentSubtitle}>
-                    Realiza una transacción bancaria segura
+                    Pago pendiente hasta aprobación
                   </ThemedText>
                 </View>
               </View>
               <MaterialIcons 
-                name={selectedMethod === 'bank' ? "expand-more" : "chevron-right"} 
+                name={selectedMethod === 'transfer' ? "expand-more" : "chevron-right"} 
                 size={24} 
                 color={EarthColors.earthDark} 
               />
             </TouchableOpacity>
 
-            {/* Bank Deposit Instructions and Upload */}
-            {selectedMethod === 'bank' && (
+            {/* Upload Receipt */}
+            {selectedMethod === 'transfer' && (
               <View style={styles.bankDetailsContainer}>
-                {/* Instructions for Payment Section */}
-                <View style={styles.instructionsSection}>
-                  <ThemedText 
-                    lightColor={EarthColors.earthDarker} 
-                    darkColor={EarthColors.beigeLight} 
-                    style={styles.sectionSubtitle}>
-                    Instrucciones de Pago
-                  </ThemedText>
-                  <ThemedText 
-                    lightColor={EarthColors.earthDark} 
-                    darkColor={EarthColors.grayEarth} 
-                    style={styles.instructionText}>
-                    Por favor deposita o transfiere el monto total a la siguiente cuenta bancaria:
-                  </ThemedText>
-                  
-                  <View style={styles.bankInfoList}>
-                    <View style={styles.bankInfoItem}>
-                      <ThemedText 
-                        lightColor={EarthColors.earthDark} 
-                        darkColor={EarthColors.grayEarth} 
-                        style={styles.bankInfoLabel}>
-                        Nombre del Banco:
-                      </ThemedText>
-                      <ThemedText 
-                        lightColor={EarthColors.earthDarker} 
-                        darkColor={EarthColors.beigeLight} 
-                        style={styles.bankInfoValue}>
-                        City Bank
-                      </ThemedText>
-                    </View>
-                    <View style={styles.bankInfoItem}>
-                      <ThemedText 
-                        lightColor={EarthColors.earthDark} 
-                        darkColor={EarthColors.grayEarth} 
-                        style={styles.bankInfoLabel}>
-                        Nombre de la Cuenta:
-                      </ThemedText>
-                      <ThemedText 
-                        lightColor={EarthColors.earthDarker} 
-                        darkColor={EarthColors.beigeLight} 
-                        style={styles.bankInfoValue}>
-                        HatunBus SAC
-                      </ThemedText>
-                    </View>
-                    <View style={styles.bankInfoItem}>
-                      <ThemedText 
-                        lightColor={EarthColors.earthDark} 
-                        darkColor={EarthColors.grayEarth} 
-                        style={styles.bankInfoLabel}>
-                        Número de Cuenta:
-                      </ThemedText>
-                      <ThemedText 
-                        lightColor={EarthColors.earthDarker} 
-                        darkColor={EarthColors.beigeLight} 
-                        style={styles.bankInfoValue}>
-                        123-456789-012
-                      </ThemedText>
-                    </View>
-                    <View style={styles.bankInfoItem}>
-                      <ThemedText 
-                        lightColor={EarthColors.earthDark} 
-                        darkColor={EarthColors.grayEarth} 
-                        style={styles.bankInfoLabel}>
-                        Referencia:
-                      </ThemedText>
-                      <ThemedText 
-                        lightColor={EarthColors.earthDarker} 
-                        darkColor={EarthColors.beigeLight} 
-                        style={styles.bankInfoValue}>
-                        {bookingId}
-                      </ThemedText>
-                    </View>
-                  </View>
-                </View>
-
-                {/* Upload Proof of Payment Section */}
                 <View style={styles.uploadSection}>
                   <ThemedText 
                     lightColor={EarthColors.earthDarker} 
@@ -216,7 +343,7 @@ export default function PaymentMethodScreen() {
                     lightColor={EarthColors.earthDark} 
                     darkColor={EarthColors.grayEarth} 
                     style={styles.instructionText}>
-                    Sube una foto de tu comprobante de depósito o una captura de pantalla de tu transferencia.
+                    Sube una foto de tu comprobante. El ticket estará pendiente hasta que sea aprobado por un oficinista.
                   </ThemedText>
                   
                   <View style={styles.uploadArea}>
@@ -240,7 +367,7 @@ export default function PaymentMethodScreen() {
                         lightColor={EarthColors.earthDark} 
                         darkColor={EarthColors.grayEarth} 
                         style={styles.uploadPlaceholderText}>
-                        Subir Archivo
+                        Subir Comprobante
                       </ThemedText>
                     </TouchableOpacity>
                   </View>
@@ -249,30 +376,30 @@ export default function PaymentMethodScreen() {
             )}
           </View>
 
-          {/* Credit Card Option */}
+          {/* PayPal Option */}
           <TouchableOpacity
             style={[
               styles.paymentCard,
-              selectedMethod === 'credit' && styles.paymentCardSelected
+              selectedMethod === 'paypal' && styles.paymentCardSelected
             ]}
-            onPress={() => handleMethodSelect('credit')}
+            onPress={() => handleMethodSelect('paypal')}
             activeOpacity={0.7}>
             <View style={styles.paymentCardLeft}>
               <View style={styles.paymentIcon}>
-                <MaterialIcons name="credit-card" size={24} color={EarthColors.earthDarker} />
+                <MaterialIcons name="payment" size={24} color={EarthColors.earthDarker} />
               </View>
               <View style={styles.paymentInfo}>
                 <ThemedText 
                   lightColor={EarthColors.earthDarker} 
                   darkColor={EarthColors.beigeLight} 
                   style={styles.paymentTitle}>
-                  Tarjeta de Crédito
+                  PayPal (Sandbox)
                 </ThemedText>
                 <ThemedText 
                   lightColor={EarthColors.earthDark} 
                   darkColor={EarthColors.grayEarth} 
                   style={styles.paymentSubtitle}>
-                  Paga con tu tarjeta de crédito
+                  Pago automático - Modo prueba
                 </ThemedText>
               </View>
             </View>
@@ -285,22 +412,39 @@ export default function PaymentMethodScreen() {
         </View>
       </ScrollView>
 
+      {/* Waiting for Payment Indicator */}
+      {waitingForPayment && (
+        <View style={styles.waitingContainer}>
+          <ActivityIndicator size="large" color={EarthColors.earthPrimary} />
+          <ThemedText style={styles.waitingText}>
+            Esperando confirmación del pago...
+          </ThemedText>
+          <ThemedText style={styles.waitingSubtext}>
+            El sistema detectará automáticamente cuando completes el pago en PayPal
+          </ThemedText>
+        </View>
+      )}
+
       {/* Fixed Bottom Button */}
       <View style={styles.bottomButtonContainer}>
         <TouchableOpacity
           style={[
             styles.continueButton,
-            !selectedMethod && styles.continueButtonDisabled
+            (!selectedMethod || isLoading) && styles.continueButtonDisabled
           ]}
           onPress={handleContinue}
-          disabled={false}
+          disabled={!selectedMethod || isLoading}
           activeOpacity={0.8}>
-          <ThemedText 
-            lightColor={EarthColors.beigeBone} 
-            darkColor={EarthColors.beigeBone} 
-            style={styles.continueButtonText}>
-            Enviar Pago
-          </ThemedText>
+          {isLoading ? (
+            <ActivityIndicator color={EarthColors.beigeBone} />
+          ) : (
+            <ThemedText 
+              lightColor={EarthColors.beigeBone} 
+              darkColor={EarthColors.beigeBone} 
+              style={styles.continueButtonText}>
+              {selectedMethod === 'transfer' ? 'Subir Comprobante' : 'Pagar con PayPal'}
+            </ThemedText>
+          )}
         </TouchableOpacity>
       </View>
     </ThemedView>
@@ -505,6 +649,32 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: EarthColors.beigeBone,
+  },
+  waitingContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    zIndex: 1000,
+  },
+  waitingText: {
+    marginTop: 16,
+    fontSize: 18,
+    fontWeight: '600',
+    color: EarthColors.whiteBone,
+    textAlign: 'center',
+  },
+  waitingSubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    color: EarthColors.beigeLight,
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
 });
 

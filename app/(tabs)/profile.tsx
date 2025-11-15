@@ -4,9 +4,12 @@ import { Header } from '@/components/ui/header';
 import { ThemedTextInput } from '@/components/ui/text-input';
 import { EarthColors } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
+import { API_BASE_URL } from '@/constants/api';
+import { getJsonWithAuth, putJsonWithAuth } from '@/services/api';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
 import {
     Image,
     Modal,
@@ -14,84 +17,222 @@ import {
     StyleSheet,
     TouchableOpacity,
     View,
+    Alert,
+    ActivityIndicator,
 } from 'react-native';
 
+interface UserProfile {
+  id: string;
+  firstNames: string;
+  lastNames: string;
+  idCard: string;
+  email: string;
+  phone: string;
+  role: string;
+  birthDate: string | null;
+  gender: string | null;
+  profilePhoto: string | null;
+}
+
 export default function ProfileScreen() {
-  const { user, logout } = useAuth();
-  const [userData, setUserData] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
-    profileImage: user?.profileImage || null,
+  const { user, logout, token } = useAuth();
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Edit Profile Modal
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [editData, setEditData] = useState({
+    firstNames: '',
+    lastNames: '',
+    email: '',
+    phone: '',
+    birthDate: '',
+    gender: '',
   });
 
-  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
-  const [editName, setEditName] = useState(userData.name);
-  const [editEmail, setEditEmail] = useState(userData.email);
+  // Change Password Modal
+  const [isPasswordModalVisible, setIsPasswordModalVisible] = useState(false);
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
 
-  // Actualizar datos cuando cambie el usuario
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
   useEffect(() => {
-    if (user) {
-      setUserData({
-        name: user.name,
-        email: user.email,
-        profileImage: user.profileImage || null,
-      });
-      setEditName(user.name);
-      setEditEmail(user.email);
+    loadProfile();
+  }, []);
+
+  const loadProfile = async () => {
+    try {
+      setLoading(true);
+      const data = await getJsonWithAuth(`${API_BASE_URL}/perfil`);
+      setProfile(data);
+    } catch (error: any) {
+      Alert.alert('Error', 'No se pudo cargar el perfil');
+    } finally {
+      setLoading(false);
     }
-  }, [user]);
+  };
 
   const handleEditProfile = () => {
-    setIsEditModalVisible(true);
-    setEditName(userData.name);
-    setEditEmail(userData.email);
-  };
-
-  const handleSaveProfile = () => {
-    setUserData({
-      ...userData,
-      name: editName,
-      email: editEmail,
+    if (!profile) return;
+    setEditData({
+      firstNames: profile.firstNames,
+      lastNames: profile.lastNames,
+      email: profile.email,
+      phone: profile.phone || '',
+      birthDate: profile.birthDate || '',
+      gender: profile.gender || '',
     });
-    setIsEditModalVisible(false);
+    setIsEditModalVisible(true);
   };
 
-  const handleCancelEdit = () => {
-    setIsEditModalVisible(false);
-    setEditName(userData.name);
-    setEditEmail(userData.email);
+  const handleSaveProfile = async () => {
+    try {
+      const updated = await putJsonWithAuth(`${API_BASE_URL}/perfil`, editData);
+      setProfile(updated);
+      setIsEditModalVisible(false);
+      Alert.alert('Éxito', 'Perfil actualizado correctamente');
+    } catch (error: any) {
+      Alert.alert('Error', error?.response?.data?.message || 'No se pudo actualizar el perfil');
+    }
   };
 
-  const handleMenuOption = (option: string) => {
-    console.log('Navegar a:', option);
-    // Aquí irá la navegación a cada pantalla
-    // router.push(`/${option}`);
+  const handleChangePassword = async () => {
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      Alert.alert('Error', 'Las contraseñas no coinciden');
+      return;
+    }
+
+    try {
+      await putJsonWithAuth(`${API_BASE_URL}/perfil/password`, passwordData);
+      setIsPasswordModalVisible(false);
+      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      Alert.alert('Éxito', 'Contraseña cambiada correctamente');
+    } catch (error: any) {
+      Alert.alert('Error', error?.response?.data?.message || 'No se pudo cambiar la contraseña');
+    }
+  };
+
+  const handleSelectPhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (status !== 'granted') {
+        Alert.alert('Permiso denegado', 'Necesitamos permisos para acceder a tus fotos');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        await uploadPhoto(result.assets[0].uri);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo seleccionar la imagen');
+    }
+  };
+
+  const uploadPhoto = async (uri: string) => {
+    try {
+      setUploadingPhoto(true);
+
+      const formData = new FormData();
+      const filename = uri.split('/').pop() || 'photo.jpg';
+      const match = /\.(\w+)$/.exec(filename);
+      const type = match ? `image/${match[1]}` : 'image/jpeg';
+
+      formData.append('file', {
+        uri,
+        name: filename,
+        type,
+      } as any);
+
+      const response = await fetch(`${API_BASE_URL}/perfil/foto`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al subir la foto');
+      }
+
+      const updated = await response.json();
+      setProfile(updated);
+      Alert.alert('Éxito', 'Foto de perfil actualizada');
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo subir la foto');
+    } finally {
+      setUploadingPhoto(false);
+    }
   };
 
   const handleLogout = async () => {
-    console.log('Cerrar sesión');
     await logout();
     router.replace('/login');
   };
 
+  const getRoleLabel = (role: string) => {
+    switch (role) {
+      case 'ADMIN': return 'Administrador';
+      case 'COOPERATIVE': return 'Cooperativa';
+      case 'CLERK': return 'Oficinista';
+      case 'DRIVER': return 'Conductor';
+      case 'CLIENT': return 'Cliente';
+      default: return role;
+    }
+  };
+
+  if (loading) {
+    return (
+      <ThemedView style={styles.container}>
+        <Header title="Perfil" showBackButton={false} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={EarthColors.blackSoft} />
+          <ThemedText style={styles.loadingText}>Cargando perfil...</ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <ThemedView style={styles.container}>
+        <Header title="Perfil" showBackButton={false} />
+        <View style={styles.loadingContainer}>
+          <ThemedText>No se pudo cargar el perfil</ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+
   return (
     <ThemedView style={styles.container}>
-      {/* Header */}
       <Header title="Perfil" showBackButton={false} />
-      
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
-        
+
         {/* User Information Card */}
         <View style={styles.userCard}>
           {/* Profile Picture */}
           <View style={styles.profilePictureContainer}>
             <View style={styles.profilePicture}>
-              {userData.profileImage ? (
-                <Image 
-                  source={{ uri: userData.profileImage }} 
+              {profile.profilePhoto ? (
+                <Image
+                  source={{ uri: profile.profilePhoto }}
                   style={styles.profileImage}
                   resizeMode="cover"
                 />
@@ -100,73 +241,114 @@ export default function ProfileScreen() {
                   <MaterialIcons name="person" size={60} color={EarthColors.earthDark} />
                 </View>
               )}
+              {uploadingPhoto && (
+                <View style={styles.uploadingOverlay}>
+                  <ActivityIndicator size="large" color={EarthColors.whiteBone} />
+                </View>
+              )}
             </View>
             <TouchableOpacity
-              style={styles.editProfileButton}
-              onPress={handleEditProfile}
-              activeOpacity={0.7}>
-              <MaterialIcons name="edit" size={16} color={EarthColors.beigeBone} />
+              style={styles.cameraButton}
+              onPress={handleSelectPhoto}
+              activeOpacity={0.7}
+              disabled={uploadingPhoto}>
+              <MaterialIcons name="camera-alt" size={20} color={EarthColors.whiteBone} />
             </TouchableOpacity>
           </View>
 
           {/* User Name */}
-          <ThemedText 
-            lightColor={EarthColors.earthDarker} 
-            darkColor={EarthColors.beigeLight} 
+          <ThemedText
+            lightColor={EarthColors.earthDarker}
+            darkColor={EarthColors.beigeLight}
             style={styles.userName}>
-            {userData.name}
+            {profile.firstNames} {profile.lastNames}
           </ThemedText>
 
           {/* User Email */}
-          <ThemedText 
-            lightColor={EarthColors.earthDark} 
-            darkColor={EarthColors.grayEarth} 
+          <ThemedText
+            lightColor={EarthColors.earthDark}
+            darkColor={EarthColors.grayEarth}
             style={styles.userEmail}>
-            {userData.email}
+            {profile.email}
           </ThemedText>
 
           {/* User Role */}
-          {user && (
-            <View style={styles.roleBadge}>
-              <ThemedText 
-                lightColor={EarthColors.earthDarker} 
-                darkColor={EarthColors.beigeLight} 
-                style={styles.roleText}>
-                {user.role === 'driver' ? 'Conductor' : 'Pasajero'}
-              </ThemedText>
-            </View>
-          )}
+          <View style={styles.roleBadge}>
+            <ThemedText
+              lightColor={EarthColors.earthDarker}
+              darkColor={EarthColors.beigeLight}
+              style={styles.roleText}>
+              {getRoleLabel(profile.role)}
+            </ThemedText>
+          </View>
+
+          {/* Edit Profile Button */}
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={handleEditProfile}
+            activeOpacity={0.7}>
+            <MaterialIcons name="edit" size={20} color={EarthColors.whiteBone} />
+            <ThemedText style={styles.editButtonText}>Editar Perfil</ThemedText>
+          </TouchableOpacity>
         </View>
 
         {/* Menu Options */}
         <View style={styles.menuCard}>
           {/* Personal Information */}
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => handleMenuOption('personal-information')}
-            activeOpacity={0.7}>
-            <View style={styles.menuItemLeft}>
-              <MaterialIcons name="person" size={24} color={EarthColors.earthDarker} />
-              <ThemedText 
-                lightColor={EarthColors.earthDarker} 
-                darkColor={EarthColors.beigeLight} 
-                style={styles.menuItemText}>
-                Información Personal
-              </ThemedText>
+          <View style={styles.infoSection}>
+            <ThemedText style={styles.sectionTitle}>Información Personal</ThemedText>
+
+            <View style={styles.infoRow}>
+              <MaterialIcons name="badge" size={20} color={EarthColors.earthDark} />
+              <View style={styles.infoContent}>
+                <ThemedText style={styles.infoLabel}>Cédula</ThemedText>
+                <ThemedText style={styles.infoValue}>{profile.idCard}</ThemedText>
+              </View>
             </View>
-            <MaterialIcons name="chevron-right" size={24} color={EarthColors.earthDark} />
-          </TouchableOpacity>
+
+            <View style={styles.infoRow}>
+              <MaterialIcons name="phone" size={20} color={EarthColors.earthDark} />
+              <View style={styles.infoContent}>
+                <ThemedText style={styles.infoLabel}>Teléfono</ThemedText>
+                <ThemedText style={styles.infoValue}>{profile.phone || 'No registrado'}</ThemedText>
+              </View>
+            </View>
+
+            {profile.birthDate && (
+              <View style={styles.infoRow}>
+                <MaterialIcons name="cake" size={20} color={EarthColors.earthDark} />
+                <View style={styles.infoContent}>
+                  <ThemedText style={styles.infoLabel}>Fecha de Nacimiento</ThemedText>
+                  <ThemedText style={styles.infoValue}>
+                    {new Date(profile.birthDate).toLocaleDateString('es-ES')}
+                  </ThemedText>
+                </View>
+              </View>
+            )}
+
+            {profile.gender && (
+              <View style={styles.infoRow}>
+                <MaterialIcons name="wc" size={20} color={EarthColors.earthDark} />
+                <View style={styles.infoContent}>
+                  <ThemedText style={styles.infoLabel}>Género</ThemedText>
+                  <ThemedText style={styles.infoValue}>
+                    {profile.gender === 'M' ? 'Masculino' : profile.gender === 'F' ? 'Femenino' : 'Otro'}
+                  </ThemedText>
+                </View>
+              </View>
+            )}
+          </View>
 
           {/* Change Password */}
           <TouchableOpacity
-            style={styles.menuItemLast}
-            onPress={() => handleMenuOption('change-password')}
+            style={styles.menuItem}
+            onPress={() => setIsPasswordModalVisible(true)}
             activeOpacity={0.7}>
             <View style={styles.menuItemLeft}>
               <MaterialIcons name="lock" size={24} color={EarthColors.earthDarker} />
-              <ThemedText 
-                lightColor={EarthColors.earthDarker} 
-                darkColor={EarthColors.beigeLight} 
+              <ThemedText
+                lightColor={EarthColors.earthDarker}
+                darkColor={EarthColors.beigeLight}
                 style={styles.menuItemText}>
                 Cambiar Contraseña
               </ThemedText>
@@ -181,9 +363,9 @@ export default function ProfileScreen() {
           onPress={handleLogout}
           activeOpacity={0.7}>
           <MaterialIcons name="logout" size={20} color="#DC2626" />
-          <ThemedText 
-            lightColor="#DC2626" 
-            darkColor="#DC2626" 
+          <ThemedText
+            lightColor="#DC2626"
+            darkColor="#DC2626"
             style={styles.logoutButtonText}>
             Cerrar Sesión
           </ThemedText>
@@ -195,86 +377,130 @@ export default function ProfileScreen() {
         visible={isEditModalVisible}
         animationType="slide"
         transparent={true}
-        onRequestClose={handleCancelEdit}>
+        onRequestClose={() => setIsEditModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            {/* Modal Header */}
             <View style={styles.modalHeader}>
-              <ThemedText 
-                lightColor={EarthColors.earthDarker} 
-                darkColor={EarthColors.beigeLight} 
-                style={styles.modalTitle}>
-                Editar Perfil
-              </ThemedText>
-              <TouchableOpacity
-                onPress={handleCancelEdit}
-                activeOpacity={0.7}>
+              <ThemedText style={styles.modalTitle}>Editar Perfil</ThemedText>
+              <TouchableOpacity onPress={() => setIsEditModalVisible(false)}>
                 <MaterialIcons name="close" size={24} color={EarthColors.earthDarker} />
               </TouchableOpacity>
             </View>
 
-            {/* Modal Body */}
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {/* Name Input */}
               <View style={styles.inputContainer}>
-                <ThemedText 
-                  lightColor={EarthColors.earthDarker} 
-                  darkColor={EarthColors.beigeLight} 
-                  style={styles.inputLabel}>
-                  Nombre Completo
-                </ThemedText>
+                <ThemedText style={styles.inputLabel}>Nombres</ThemedText>
                 <ThemedTextInput
-                  value={editName}
-                  onChangeText={setEditName}
-                  placeholder="Ingresa tu nombre"
-                  containerStyle={styles.input}
-                  placeholderTextColor={EarthColors.blackSoftOpacity || 'rgba(26, 26, 26, 0.6)'}
+                  value={editData.firstNames}
+                  onChangeText={(text) => setEditData({...editData, firstNames: text})}
+                  placeholder="Nombres"
                 />
               </View>
 
-              {/* Email Input */}
               <View style={styles.inputContainer}>
-                <ThemedText 
-                  lightColor={EarthColors.earthDarker} 
-                  darkColor={EarthColors.beigeLight} 
-                  style={styles.inputLabel}>
-                  Correo Electrónico
-                </ThemedText>
+                <ThemedText style={styles.inputLabel}>Apellidos</ThemedText>
                 <ThemedTextInput
-                  value={editEmail}
-                  onChangeText={setEditEmail}
-                  placeholder="Ingresa tu correo"
+                  value={editData.lastNames}
+                  onChangeText={(text) => setEditData({...editData, lastNames: text})}
+                  placeholder="Apellidos"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <ThemedText style={styles.inputLabel}>Email</ThemedText>
+                <ThemedTextInput
+                  value={editData.email}
+                  onChangeText={(text) => setEditData({...editData, email: text})}
+                  placeholder="Email"
                   keyboardType="email-address"
                   autoCapitalize="none"
-                  containerStyle={styles.input}
-                  placeholderTextColor={EarthColors.blackSoftOpacity || 'rgba(26, 26, 26, 0.6)'}
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <ThemedText style={styles.inputLabel}>Teléfono</ThemedText>
+                <ThemedTextInput
+                  value={editData.phone}
+                  onChangeText={(text) => setEditData({...editData, phone: text})}
+                  placeholder="Teléfono"
+                  keyboardType="phone-pad"
                 />
               </View>
             </ScrollView>
 
-            {/* Modal Footer */}
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={styles.cancelButton}
-                onPress={handleCancelEdit}
-                activeOpacity={0.7}>
-                <ThemedText 
-                  lightColor={EarthColors.earthDarker} 
-                  darkColor={EarthColors.beigeLight} 
-                  style={styles.cancelButtonText}>
-                  Cancelar
-                </ThemedText>
+                onPress={() => setIsEditModalVisible(false)}>
+                <ThemedText style={styles.cancelButtonText}>Cancelar</ThemedText>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.saveButton}
-                onPress={handleSaveProfile}
-                activeOpacity={0.8}>
-                <ThemedText 
-                  lightColor={EarthColors.beigeBone} 
-                  darkColor={EarthColors.beigeBone} 
-                  style={styles.saveButtonText}>
-                  Guardar
-                </ThemedText>
+                onPress={handleSaveProfile}>
+                <ThemedText style={styles.saveButtonText}>Guardar</ThemedText>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Change Password Modal */}
+      <Modal
+        visible={isPasswordModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsPasswordModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <ThemedText style={styles.modalTitle}>Cambiar Contraseña</ThemedText>
+              <TouchableOpacity onPress={() => setIsPasswordModalVisible(false)}>
+                <MaterialIcons name="close" size={24} color={EarthColors.earthDarker} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              <View style={styles.inputContainer}>
+                <ThemedText style={styles.inputLabel}>Contraseña Actual</ThemedText>
+                <ThemedTextInput
+                  value={passwordData.currentPassword}
+                  onChangeText={(text) => setPasswordData({...passwordData, currentPassword: text})}
+                  placeholder="Contraseña actual"
+                  secureTextEntry
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <ThemedText style={styles.inputLabel}>Nueva Contraseña</ThemedText>
+                <ThemedTextInput
+                  value={passwordData.newPassword}
+                  onChangeText={(text) => setPasswordData({...passwordData, newPassword: text})}
+                  placeholder="Nueva contraseña (mínimo 6 caracteres)"
+                  secureTextEntry
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <ThemedText style={styles.inputLabel}>Confirmar Contraseña</ThemedText>
+                <ThemedTextInput
+                  value={passwordData.confirmPassword}
+                  onChangeText={(text) => setPasswordData({...passwordData, confirmPassword: text})}
+                  placeholder="Confirmar nueva contraseña"
+                  secureTextEntry
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setIsPasswordModalVisible(false)}>
+                <ThemedText style={styles.cancelButtonText}>Cancelar</ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={handleChangePassword}>
+                <ThemedText style={styles.saveButtonText}>Cambiar</ThemedText>
               </TouchableOpacity>
             </View>
           </View>
@@ -296,20 +522,31 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 100,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: EarthColors.earthDark,
+  },
   userCard: {
     backgroundColor: EarthColors.whiteBone,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
     alignItems: 'center',
     marginBottom: 16,
     shadowColor: EarthColors.blackSoft,
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 5,
   },
   profilePictureContainer: {
     position: 'relative',
@@ -321,6 +558,7 @@ const styles = StyleSheet.create({
     borderRadius: 60,
     backgroundColor: EarthColors.beigeLight,
     overflow: 'hidden',
+    position: 'relative',
   },
   profileImage: {
     width: '100%',
@@ -333,13 +571,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: EarthColors.beigeLight,
   },
-  editProfileButton: {
+  uploadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cameraButton: {
     position: 'absolute',
     bottom: 0,
     right: 0,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: EarthColors.blackSoft,
     justifyContent: 'center',
     alignItems: 'center',
@@ -355,47 +603,82 @@ const styles = StyleSheet.create({
   userEmail: {
     fontSize: 16,
     textAlign: 'center',
+    marginBottom: 12,
   },
   roleBadge: {
-    marginTop: 12,
     paddingHorizontal: 16,
     paddingVertical: 6,
     borderRadius: 20,
     backgroundColor: EarthColors.earthPrimary + '20',
+    marginBottom: 16,
   },
   roleText: {
     fontSize: 14,
     fontWeight: '600',
-    textTransform: 'capitalize',
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: EarthColors.blackSoft,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    gap: 8,
+  },
+  editButtonText: {
+    color: EarthColors.whiteBone,
+    fontSize: 16,
+    fontWeight: '600',
   },
   menuCard: {
     backgroundColor: EarthColors.whiteBone,
-    borderRadius: 16,
+    borderRadius: 20,
     marginBottom: 16,
     shadowColor: EarthColors.blackSoft,
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 5,
     overflow: 'hidden',
+  },
+  infoSection: {
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: EarthColors.beigeMedium || '#E8DFD5',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: EarthColors.earthDarker,
+    marginBottom: 16,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+    gap: 12,
+  },
+  infoContent: {
+    flex: 1,
+  },
+  infoLabel: {
+    fontSize: 12,
+    color: EarthColors.earthDark,
+    marginBottom: 4,
+  },
+  infoValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: EarthColors.earthDarker,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: EarthColors.beigeMedium || '#E8DFD5',
-  },
-  menuItemLast: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 20,
-    borderBottomWidth: 0,
   },
   menuItemLeft: {
     flexDirection: 'row',
@@ -411,11 +694,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FEE2E2', // Rosa claro
+    backgroundColor: '#FEE2E2',
     borderRadius: 12,
     padding: 16,
     borderWidth: 1.5,
-    borderColor: '#DC2626', // Rojo
+    borderColor: '#DC2626',
     gap: 8,
   },
   logoutButtonText: {
@@ -432,14 +715,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '80%',
-    shadowColor: EarthColors.blackSoft,
-    shadowOffset: {
-      width: 0,
-      height: -2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 8,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -452,6 +727,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: '700',
+    color: EarthColors.earthDarker,
   },
   modalBody: {
     padding: 20,
@@ -463,9 +739,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 8,
-  },
-  input: {
-    marginBottom: 0,
+    color: EarthColors.earthDarker,
   },
   modalFooter: {
     flexDirection: 'row',
@@ -488,6 +762,7 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '600',
+    color: EarthColors.earthDarker,
   },
   saveButton: {
     flex: 1,
@@ -496,14 +771,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 10,
     backgroundColor: EarthColors.blackSoft,
-    shadowColor: EarthColors.blackSoft,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
   },
   saveButtonText: {
     fontSize: 16,

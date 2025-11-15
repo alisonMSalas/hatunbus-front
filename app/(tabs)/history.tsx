@@ -16,7 +16,7 @@ import {
     ActivityIndicator,
 } from 'react-native';
 
-interface PurchaseHistory {
+interface HistoryTicket {
   id: string;
   origin: string;
   destination: string;
@@ -28,11 +28,30 @@ interface PurchaseHistory {
   passenger: string;
   bus: string;
   ticketId: string;
+  scheduledDepartureTime: string;
+  status: 'COMPLETED' | 'MISSED'; // Completado o Perdido
+  usageDate?: string; // Fecha en que fue escaneado
+  validatingDriver?: string; // Conductor que validó
+}
+
+interface GroupedHistoryTrip {
+  tripId: string;
+  origin: string;
+  destination: string;
+  date: string;
+  time: string;
+  cooperative: string;
+  bus: string;
+  scheduledDepartureTime: string;
+  tickets: HistoryTicket[];
+  // Estadísticas del grupo
+  completedCount: number;
+  missedCount: number;
 }
 
 export default function HistoryScreen() {
   const { user, isLoading: authLoading } = useAuth();
-  const [pastTrips, setPastTrips] = useState<PurchaseHistory[]>([]);
+  const [groupedTrips, setGroupedTrips] = useState<GroupedHistoryTrip[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -56,58 +75,114 @@ export default function HistoryScreen() {
       setLoading(false);
       return;
     }
-    
+
     try {
       setLoading(true);
-      
+
       const purchases = await getJsonWithAuth(`${API_BASE_URL}/compras/usuario/${user.id}`);
-      
+
       const now = new Date();
-      const past: PurchaseHistory[] = [];
-      
+      const past: HistoryTicket[] = [];
+
       if (!purchases || purchases.length === 0) {
-        setPastTrips([]);
+        setGroupedTrips([]);
         setLoading(false);
         return;
       }
-      
+
       purchases.forEach((purchase: any) => {
         if (purchase.tickets && purchase.tickets.length > 0) {
           purchase.tickets.forEach((ticket: any) => {
-            const tripDate = new Date(ticket.trip?.scheduledDepartureTime || ticket.trip?.date);
+            const tripDate = new Date(ticket.scheduledDepartureTime || ticket.trip?.scheduledDepartureTime || ticket.trip?.date);
+
+            // Mostrar en historial si:
+            // 1. El ticket fue USADO (escaneado por conductor)
+            // 2. O si el viaje ya pasó y el ticket estaba PAID
+            const isUsed = ticket.status === 'USED' || ticket.usageDate != null;
             const isPast = tripDate < now;
-            
-            // Only process past trips
-            if (isPast) {
-              const trip: PurchaseHistory = {
+            const shouldShowInHistory = isUsed || (isPast && ticket.status === 'PAID');
+
+            if (shouldShowInHistory) {
+              // Determinar si el viaje fue completado o perdido
+              const tripStatus: 'COMPLETED' | 'MISSED' = isUsed ? 'COMPLETED' : 'MISSED';
+
+              const trip: HistoryTicket = {
                 id: purchase.id,
                 ticketId: ticket.id,
-                origin: ticket.originStopName || ticket.trip?.routeOrigin || 'Origen',
-                destination: ticket.destinationStopName || ticket.trip?.routeDestination || 'Destino',
+                origin: ticket.originStopName || ticket.routeOrigin || 'Origen',
+                destination: ticket.destinationStopName || ticket.routeDestination || 'Destino',
                 date: formatDate(tripDate),
-                time: formatTime(ticket.trip?.scheduledDepartureTime),
-                cooperative: ticket.trip?.frequency?.cooperative?.name || 'Cooperativa',
+                time: formatTime(ticket.scheduledDepartureTime),
+                cooperative: ticket.cooperativeName || 'Cooperativa',
                 price: `$${ticket.finalPrice || '0.00'}`,
                 seat: ticket.seatNumber || '--',
                 passenger: ticket.passengerName || user.firstName || 'Pasajero',
-                bus: ticket.trip?.busPlate || 'Bus',
+                bus: ticket.busPlate || 'Bus',
+                scheduledDepartureTime: ticket.scheduledDepartureTime,
+                status: tripStatus,
+                usageDate: ticket.usageDate,
+                validatingDriver: ticket.validatingDriver,
               };
               past.push(trip);
             }
           });
         }
       });
-      
-      setPastTrips(past);
+
+      // Agrupar tickets por viaje (misma lógica que tickets.tsx)
+      const grouped = groupTicketsByTrip(past);
+      setGroupedTrips(grouped);
     } catch (error: any) {
       if (error?.response?.status !== 404) {
         alert('Error al cargar el historial: ' + (error?.message || 'Error desconocido'));
       } else {
-        setPastTrips([]);
+        setGroupedTrips([]);
       }
     } finally {
       setLoading(false);
     }
+  };
+
+  const groupTicketsByTrip = (tickets: HistoryTicket[]): GroupedHistoryTrip[] => {
+    const grouped = new Map<string, GroupedHistoryTrip>();
+
+    tickets.forEach((ticket) => {
+      // Crear una clave única usando: origen + destino + fecha/hora + bus + cooperativa
+      // Si CUALQUIERA de estos cambia, es un grupo diferente
+      const key = `${ticket.origin}|${ticket.destination}|${ticket.scheduledDepartureTime}|${ticket.bus}|${ticket.cooperative}`;
+
+      if (grouped.has(key)) {
+        // Ya existe este viaje exacto, agregar el ticket
+        const group = grouped.get(key)!;
+        group.tickets.push(ticket);
+        // Actualizar contadores
+        if (ticket.status === 'COMPLETED') {
+          group.completedCount++;
+        } else {
+          group.missedCount++;
+        }
+      } else {
+        // Nuevo viaje, crear grupo
+        grouped.set(key, {
+          tripId: ticket.ticketId, // Usar el primer ticketId como referencia
+          origin: ticket.origin,
+          destination: ticket.destination,
+          date: ticket.date,
+          time: ticket.time,
+          cooperative: ticket.cooperative,
+          bus: ticket.bus,
+          scheduledDepartureTime: ticket.scheduledDepartureTime,
+          tickets: [ticket],
+          completedCount: ticket.status === 'COMPLETED' ? 1 : 0,
+          missedCount: ticket.status === 'MISSED' ? 1 : 0,
+        });
+      }
+    });
+
+    // Convertir Map a array y ordenar por fecha descendente (más recientes primero)
+    return Array.from(grouped.values()).sort((a, b) => {
+      return new Date(b.scheduledDepartureTime).getTime() - new Date(a.scheduledDepartureTime).getTime();
+    });
   };
 
   const formatDate = (date: Date) => {
@@ -124,21 +199,181 @@ export default function HistoryScreen() {
     return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   };
 
-  const handleViewTicket = (purchase: PurchaseHistory) => {
+  const handleViewTicket = (ticket: HistoryTicket) => {
     router.push({
       pathname: '/ticket-detail',
       params: {
-        origin: purchase.origin,
-        destination: purchase.destination,
-        seat: purchase.seat,
-        date: purchase.date,
-        time: purchase.time,
-        passenger: purchase.passenger,
-        cooperative: purchase.cooperative,
-        bus: purchase.bus,
-        ticketId: purchase.ticketId,
+        origin: ticket.origin,
+        destination: ticket.destination,
+        seat: ticket.seat,
+        date: ticket.date,
+        time: ticket.time,
+        passenger: ticket.passenger,
+        cooperative: ticket.cooperative,
+        bus: ticket.bus,
+        ticketId: ticket.ticketId,
+        isHistory: 'true',
+        status: ticket.status,
+        usageDate: ticket.usageDate || '',
+        validatingDriver: ticket.validatingDriver || '',
       },
     });
+  };
+
+  const formatUsageDate = (usageDate?: string) => {
+    if (!usageDate) return '';
+    const date = new Date(usageDate);
+    return date.toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const renderGroupedTrip = (groupedTrip: GroupedHistoryTrip) => {
+    const ticketCount = groupedTrip.tickets.length;
+    const hasCompleted = groupedTrip.completedCount > 0;
+    const hasMissed = groupedTrip.missedCount > 0;
+
+    // Determinar el estado predominante del grupo
+    const groupStatus = groupedTrip.completedCount >= groupedTrip.missedCount ? 'COMPLETED' : 'MISSED';
+
+    return (
+      <View key={groupedTrip.tripId + groupedTrip.scheduledDepartureTime} style={styles.tripGroupCard}>
+        {/* Status Badge */}
+        <View style={[
+          styles.statusBadge,
+          groupStatus === 'COMPLETED' ? styles.statusCompleted : styles.statusMissed
+        ]}>
+          <MaterialIcons
+            name={groupStatus === 'COMPLETED' ? 'check-circle' : 'cancel'}
+            size={16}
+            color={EarthColors.whiteBone}
+          />
+          <ThemedText style={styles.statusText}>
+            {groupStatus === 'COMPLETED' ? 'Viaje Completado' : 'Viaje Perdido'}
+          </ThemedText>
+          {hasCompleted && hasMissed && (
+            <ThemedText style={styles.statusSubtext}>
+              ({groupedTrip.completedCount} usados, {groupedTrip.missedCount} perdidos)
+            </ThemedText>
+          )}
+        </View>
+
+        {/* Main Content */}
+        <View style={styles.cardContent}>
+          {/* Header del viaje */}
+          <View style={styles.tripHeader}>
+            <View style={styles.tripHeaderLeft}>
+              <View style={[
+                styles.busIconContainer,
+                groupStatus === 'COMPLETED'
+                  ? { backgroundColor: '#E8F5E9' }
+                  : { backgroundColor: '#FFF3E0' }
+              ]}>
+                <MaterialIcons
+                  name="directions-bus"
+                  size={28}
+                  color={groupStatus === 'COMPLETED' ? '#4CAF50' : '#FF9800'}
+                />
+              </View>
+              <View style={styles.tripHeaderInfo}>
+                <ThemedText
+                  lightColor={EarthColors.earthDarker}
+                  darkColor={EarthColors.beigeLight}
+                  style={styles.tripRoute}>
+                  {groupedTrip.origin} → {groupedTrip.destination}
+                </ThemedText>
+                <View style={styles.tripMetadata}>
+                  <MaterialIcons name="schedule" size={14} color={EarthColors.earthDark} />
+                  <ThemedText
+                    lightColor={EarthColors.earthDark}
+                    darkColor={EarthColors.grayEarth}
+                    style={styles.tripMetaText}>
+                    {groupedTrip.date} • {groupedTrip.time}
+                  </ThemedText>
+                </View>
+                <View style={styles.tripMetadata}>
+                  <MaterialIcons name="business" size={14} color={EarthColors.earthDark} />
+                  <ThemedText
+                    lightColor={EarthColors.earthDark}
+                    darkColor={EarthColors.grayEarth}
+                    style={styles.tripMetaText}>
+                    {groupedTrip.cooperative}
+                  </ThemedText>
+                </View>
+                <View style={styles.tripMetadata}>
+                  <MaterialIcons name="airport-shuttle" size={14} color={EarthColors.earthDark} />
+                  <ThemedText
+                    lightColor={EarthColors.earthDark}
+                    darkColor={EarthColors.grayEarth}
+                    style={styles.tripMetaText}>
+                    {groupedTrip.bus}
+                  </ThemedText>
+                </View>
+              </View>
+            </View>
+            <View style={styles.ticketCountBadge}>
+              <ThemedText style={styles.ticketCountText}>{ticketCount}</ThemedText>
+              <ThemedText style={styles.ticketCountLabel}>
+                {ticketCount === 1 ? 'Ticket' : 'Tickets'}
+              </ThemedText>
+            </View>
+          </View>
+
+          {/* Lista de tickets */}
+          <View style={styles.ticketsList}>
+            {groupedTrip.tickets.map((ticket) => (
+              <View key={ticket.ticketId} style={styles.ticketItem}>
+                {/* Status indicator */}
+                <View style={[
+                  styles.ticketStatusIndicator,
+                  ticket.status === 'COMPLETED' ? styles.ticketStatusCompleted : styles.ticketStatusMissed
+                ]} />
+
+                <View style={styles.ticketItemLeft}>
+                  <View style={styles.seatBadge}>
+                    <MaterialIcons name="airline-seat-recline-normal" size={16} color={EarthColors.earthPrimary} />
+                    <ThemedText style={styles.seatNumber}>{ticket.seat}</ThemedText>
+                  </View>
+                  <View style={styles.ticketPassengerInfo}>
+                    <ThemedText
+                      lightColor={EarthColors.earthDarker}
+                      darkColor={EarthColors.beigeLight}
+                      style={styles.passengerName}>
+                      {ticket.passenger}
+                    </ThemedText>
+                    {ticket.status === 'COMPLETED' && ticket.usageDate && (
+                      <View style={styles.usageBadge}>
+                        <MaterialIcons name="check-circle" size={12} color="#4CAF50" />
+                        <ThemedText style={styles.usageText}>
+                          Usado: {formatUsageDate(ticket.usageDate)}
+                        </ThemedText>
+                      </View>
+                    )}
+                    {ticket.status === 'MISSED' && (
+                      <View style={styles.usageBadge}>
+                        <MaterialIcons name="cancel" size={12} color="#FF9800" />
+                        <ThemedText style={styles.missedText}>No validado</ThemedText>
+                      </View>
+                    )}
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={styles.viewDetailsButton}
+                  onPress={() => handleViewTicket(ticket)}
+                  activeOpacity={0.7}>
+                  <ThemedText style={styles.viewDetailsText}>Ver</ThemedText>
+                  <MaterialIcons name="arrow-forward" size={16} color={EarthColors.earthPrimary} />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        </View>
+      </View>
+    );
   };
 
   return (
@@ -157,61 +392,13 @@ export default function HistoryScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}>
           
-          {pastTrips.length === 0 ? (
+          {groupedTrips.length === 0 ? (
             <View style={styles.emptyContainer}>
               <MaterialIcons name="history" size={64} color={EarthColors.earthDark} />
               <ThemedText style={styles.emptyText}>No tienes viajes en el historial</ThemedText>
             </View>
           ) : (
-            pastTrips.map((purchase) => (
-          <View key={purchase.id} style={styles.purchaseCard}>
-            <View style={styles.purchaseCardLeft}>
-              <View style={[styles.busIconContainer, { backgroundColor: EarthColors.whiteBone }]}>
-                <MaterialIcons name="directions-bus" size={24} color={EarthColors.grayMedium} />
-              </View>
-              <View style={styles.purchaseInfo}>
-                <ThemedText 
-                  lightColor={EarthColors.earthDarker} 
-                  darkColor={EarthColors.beigeLight} 
-                  style={styles.routeText}>
-                  {purchase.origin} a {purchase.destination}
-                </ThemedText>
-                <ThemedText 
-                  lightColor={EarthColors.earthDark} 
-                  darkColor={EarthColors.grayEarth} 
-                  style={styles.dateText}>
-                  {purchase.date} - {purchase.time}
-                </ThemedText>
-                <ThemedText 
-                  lightColor={EarthColors.earthDark} 
-                  darkColor={EarthColors.grayEarth} 
-                  style={styles.cooperativeText}>
-                  {purchase.cooperative}
-                </ThemedText>
-              </View>
-            </View>
-            
-            <View style={styles.priceSection}>
-              <ThemedText 
-                lightColor={EarthColors.earthDarker} 
-                darkColor={EarthColors.beigeLight} 
-                style={styles.priceText}>
-                {purchase.price}
-              </ThemedText>
-              <TouchableOpacity
-                onPress={() => handleViewTicket(purchase)}
-                activeOpacity={0.7}
-                style={styles.viewButton}>
-                <ThemedText 
-                  lightColor={EarthColors.bluePrimary} 
-                  darkColor={EarthColors.blueLight} 
-                  style={styles.viewTicketText}>
-                  Ver
-                </ThemedText>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ))
+            groupedTrips.map((groupedTrip) => renderGroupedTrip(groupedTrip))
           )}
         </ScrollView>
       )}
@@ -254,74 +441,208 @@ const styles = StyleSheet.create({
     color: EarthColors.earthDark,
     textAlign: 'center',
   },
-  purchaseCard: {
+  // Grouped Trip Card
+  tripGroupCard: {
+    backgroundColor: EarthColors.whiteBone,
+    borderRadius: 20,
+    marginBottom: 20,
+    shadowColor: EarthColors.blackSoft,
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
+    overflow: 'hidden',
+  },
+  statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: EarthColors.whiteBone,
-    borderRadius: 16,
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  statusCompleted: {
+    backgroundColor: '#4CAF50',
+  },
+  statusMissed: {
+    backgroundColor: '#FF9800',
+  },
+  statusText: {
+    color: EarthColors.whiteBone,
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statusSubtext: {
+    color: EarthColors.whiteBone,
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  cardContent: {
     padding: 16,
-    marginBottom: 12,
+  },
+  // Trip Header
+  tripHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: EarthColors.beigeLight,
+  },
+  tripHeaderLeft: {
+    flexDirection: 'row',
+    flex: 1,
+    marginRight: 12,
+  },
+  busIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
     shadowColor: EarthColors.blackSoft,
     shadowOffset: {
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  purchaseCardLeft: {
+  tripHeaderInfo: {
+    flex: 1,
+  },
+  tripRoute: {
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 8,
+    lineHeight: 22,
+  },
+  tripMetadata: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    gap: 6,
+  },
+  tripMetaText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  ticketCountBadge: {
+    backgroundColor: EarthColors.blackSoft,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 60,
+  },
+  ticketCountText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: EarthColors.whiteBone,
+  },
+  ticketCountLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: EarthColors.whiteBone,
+    marginTop: 2,
+  },
+  // Tickets List
+  ticketsList: {
+    gap: 10,
+  },
+  ticketItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: EarthColors.beigeLight,
+    borderRadius: 12,
+    padding: 12,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  ticketStatusIndicator: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+  },
+  ticketStatusCompleted: {
+    backgroundColor: '#4CAF50',
+  },
+  ticketStatusMissed: {
+    backgroundColor: '#FF9800',
+  },
+  ticketItemLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    gap: 12,
+    marginLeft: 8,
   },
-  busIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
+  seatBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 16,
-    shadowColor: EarthColors.blackSoft,
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    backgroundColor: EarthColors.whiteBone,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: EarthColors.earthPrimary,
   },
-  purchaseInfo: {
-    flex: 1,
-  },
-  routeText: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  dateText: {
-    fontSize: 13,
-    marginBottom: 2,
-  },
-  cooperativeText: {
-    fontSize: 13,
-  },
-  priceSection: {
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-  },
-  priceText: {
-    fontSize: 16,
+  seatNumber: {
+    fontSize: 14,
     fontWeight: '700',
-    marginBottom: 6,
+    color: EarthColors.earthPrimary,
   },
-  viewButton: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+  ticketPassengerInfo: {
+    flex: 1,
+    gap: 4,
   },
-  viewTicketText: {
-    fontSize: 13,
+  passengerName: {
+    fontSize: 14,
     fontWeight: '600',
+  },
+  usageBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  usageText: {
+    fontSize: 11,
+    color: '#2E7D32',
+    fontWeight: '500',
+  },
+  missedText: {
+    fontSize: 11,
+    color: '#E65100',
+    fontWeight: '500',
+  },
+  viewDetailsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: EarthColors.whiteBone,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: EarthColors.earthPrimary,
+  },
+  viewDetailsText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: EarthColors.earthPrimary,
   },
 });

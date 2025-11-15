@@ -53,3 +53,18 @@ export async function postJsonWithAuth<T = any>(url: string, body?: any, init?: 
   }
   return (await r.json()) as T;
 }
+
+export async function putJsonWithAuth<T = any>(url: string, body?: any, init?: FetchOptions): Promise<T> {
+  const r = await fetchWithAuth(url, {
+    method: 'PUT',
+    body: body ? JSON.stringify(body) : undefined,
+    headers: { 'Content-Type': 'application/json', ...(init && init.headers ? (init.headers as any) : {}) },
+    ...init,
+  });
+
+  if (!r.ok) {
+    const txt = await r.text();
+    throw new Error(txt || `HTTP ${r.status}`);
+  }
+  return (await r.json()) as T;
+}

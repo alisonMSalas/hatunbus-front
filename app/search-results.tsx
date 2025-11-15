@@ -1,18 +1,18 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Header } from '@/components/ui/header';
+import { API_BASE_URL } from '@/constants/api';
 import { EarthColors } from '@/constants/theme';
+import { getJsonWithAuth } from '@/services/api';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useState, useEffect } from 'react';
-import { getJsonWithAuth } from '@/services/api';
-import { API_BASE_URL } from '@/constants/api';
+import React, { useEffect, useState } from 'react';
 import {
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-  ActivityIndicator,
+    ActivityIndicator,
+    ScrollView,
+    StyleSheet,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 interface TripResult {
@@ -25,6 +25,8 @@ interface TripResult {
   arrivalTime: string;
   arrivalCity: string;
   duration: string;
+  originStopId: string | null;
+  destinationStopId: string | null;
 }
 
 export default function SearchResultsScreen() {
@@ -60,14 +62,34 @@ export default function SearchResultsScreen() {
           arrivalTime = arrival.toISOString();
         }
 
+        // Formatear precio con 2 decimales
+        let price = '0.00';
+        const basePrice = trip.frequency?.route?.basePrice;
+        if (basePrice != null) {
+          const priceNum = typeof basePrice === 'string' ? parseFloat(basePrice) : basePrice;
+          if (!isNaN(priceNum)) {
+            price = priceNum.toFixed(2);
+          }
+        }
+
+        // Como no hay stops en la BD, usar directamente los IDs de las ciudades de la ruta
+        // Estos IDs se usarán como "stop IDs" temporalmente
+        const originCityId = trip.frequency?.route?.originCityId || trip.routeOriginCityId;
+        const destinationCityId = trip.frequency?.route?.destinationCityId || trip.routeDestinationCityId;
+
+        console.log('Origin City ID:', originCityId);
+        console.log('Destination City ID:', destinationCityId);
+
         return {
           id: trip.id,
           operator: trip.frequency?.cooperativeName || 'Cooperativa',
           seatType: trip.busSeatsCount ? `${trip.busSeatsCount} asientos` : 'Bus',
-          price: trip.frequency?.route?.basePrice?.toFixed(2) || '0.00',
+          price: price,
           departureTime: formatTime(trip.scheduledDepartureTime),
           departureCity: trip.routeOrigin || searchParams.origin,
           arrivalTime: formatTime(arrivalTime),
+          originStopId: originCityId,
+          destinationStopId: destinationCityId,
           arrivalCity: trip.routeDestination || searchParams.destination,
           duration: calculateDuration(trip.scheduledDepartureTime, arrivalTime),
         };
@@ -113,6 +135,8 @@ export default function SearchResultsScreen() {
         arrivalCity: trip.arrivalCity,
         duration: trip.duration,
         passengers: searchParams.passengers,
+        originStopId: trip.originStopId || '',
+        destinationStopId: trip.destinationStopId || '',
       },
     });
   };
@@ -170,18 +194,22 @@ export default function SearchResultsScreen() {
         {/* Trip Results */}
         {!loading && trips.map((trip) => (
           <View key={trip.id} style={styles.tripCard}>
-            {/* Operator and Seat Type */}
+            {/* Operator, Seat Type and Price */}
             <View style={styles.tripHeader}>
-              <ThemedText lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.operator}>
-                {trip.operator}
-              </ThemedText>
-              <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.seatType}>
-                {trip.seatType}
-              </ThemedText>
-            </View>
-
-            {/* Price */}
-            <View style={styles.priceContainer}>
+              <View style={styles.operatorInfo}>
+                <ThemedText 
+                  lightColor={EarthColors.earthDarker} 
+                  darkColor={EarthColors.beigeLight} 
+                  style={styles.operator}
+                  numberOfLines={2}>
+                  {trip.operator}
+                </ThemedText>
+                <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.seatType}>
+                  {trip.seatType}
+                </ThemedText>
+              </View>
+              {/* Price */}
+              <View style={styles.priceContainer}>
               <ThemedText 
                 type="subtitle" 
                 lightColor={EarthColors.earthPrimary} 
@@ -189,9 +217,10 @@ export default function SearchResultsScreen() {
                 style={styles.price}>
                 ${trip.price}
               </ThemedText>
-              <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.priceLabel}>
-                por pasajero
-              </ThemedText>
+                <ThemedText lightColor={EarthColors.earthDark} darkColor={EarthColors.grayEarth} style={styles.priceLabel}>
+                  por pasajero
+                </ThemedText>
+              </View>
             </View>
 
             {/* Trip Details */}
@@ -303,12 +332,17 @@ const styles = StyleSheet.create({
   tripHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 12,
+  },
+  operatorInfo: {
+    flex: 1,
+    marginRight: 12,
   },
   operator: {
     fontSize: 18,
     fontWeight: '700',
+    marginBottom: 4,
   },
   seatType: {
     fontSize: 14,
@@ -316,7 +350,7 @@ const styles = StyleSheet.create({
   },
   priceContainer: {
     alignItems: 'flex-end',
-    marginBottom: 20,
+    minWidth: 100,
   },
   price: {
     fontSize: 24,
