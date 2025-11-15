@@ -2,28 +2,29 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Header } from '@/components/ui/header';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { ThemedTextInput } from '@/components/ui/text-input';
+import { API_BASE_URL } from '@/constants/api';
 import { EarthColors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
-import React, { useState, useEffect } from 'react';
-import { getJsonWithAuth } from '@/services/api';
-import { API_BASE_URL } from '@/constants/api';
+import React, { useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 
 import {
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-  ActivityIndicator,
-  Modal,
-  FlatList,
+    ActivityIndicator,
+    FlatList,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 export default function SearchScreen() {
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [departureDate, setDepartureDate] = useState('Hoy');
   const [passengers, setPassengers] = useState('1');
   const [origins, setOrigins] = useState<string[]>([]);
@@ -31,10 +32,36 @@ export default function SearchScreen() {
   const [loading, setLoading] = useState(true);
   const [showOriginPicker, setShowOriginPicker] = useState(false);
   const [showDestinationPicker, setShowDestinationPicker] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const colorScheme = useColorScheme();
+
+  const formatDate = (date: Date): string => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const selected = new Date(date);
+    selected.setHours(0, 0, 0, 0);
+    
+    if (selected.getTime() === today.getTime()) {
+      return 'Hoy';
+    }
+    
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    if (selected.getTime() === tomorrow.getTime()) {
+      return 'Mañana';
+    }
+    
+    // Formatear fecha en español
+    const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    
+    return `${days[selected.getDay()]}, ${selected.getDate()} de ${months[selected.getMonth()]}`;
+  };
 
   useEffect(() => {
     loadCities();
+    // Formatear la fecha inicial
+    setDepartureDate(formatDate(selectedDate));
   }, []);
 
   const loadCities = async () => {
@@ -63,15 +90,25 @@ export default function SearchScreen() {
     setDestination(temp);
   };
 
+  const handleDateChange = (event: DateTimePickerEvent, date?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    
+    if (date) {
+      setSelectedDate(date);
+      setDepartureDate(formatDate(date));
+    }
+  };
+
   const handleSearch = () => {
     if (!origin || !destination) {
       alert('Por favor selecciona origen y destino');
       return;
     }
 
-    // Format date from "Hoy" to YYYY-MM-DD
-    const today = new Date();
-    const formattedDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    // Format date to YYYY-MM-DD
+    const formattedDate = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
 
     router.push({
       pathname: '/search-results',
@@ -141,11 +178,12 @@ export default function SearchScreen() {
             <ThemedText lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.label}>
               Fecha de Salida
             </ThemedText>
-            <TouchableOpacity style={styles.selectField}>
+            <TouchableOpacity style={styles.selectField} onPress={() => setShowDatePicker(true)}>
               <MaterialIcons name="calendar-today" size={20} color={EarthColors.blackSoft} />
               <ThemedText lightColor={EarthColors.earthDarker} darkColor={EarthColors.beigeLight} style={styles.selectFieldText}>
                 {departureDate}
               </ThemedText>
+              <IconSymbol name="chevron.down" size={20} color={EarthColors.blackSoft} />
             </TouchableOpacity>
           </View>
 
@@ -228,6 +266,45 @@ export default function SearchScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Date Picker */}
+      {showDatePicker && (
+        Platform.OS === 'ios' ? (
+          <Modal visible={showDatePicker} transparent animationType="slide">
+            <View style={styles.modalContainer}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <ThemedText style={styles.modalTitle}>Selecciona Fecha</ThemedText>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <IconSymbol name="xmark" size={24} color={EarthColors.blackSoft} />
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={selectedDate}
+                  mode="date"
+                  display="spinner"
+                  onChange={handleDateChange}
+                  minimumDate={new Date()}
+                  locale="es-ES"
+                />
+                <TouchableOpacity
+                  style={styles.datePickerButton}
+                  onPress={() => setShowDatePicker(false)}>
+                  <ThemedText style={styles.datePickerButtonText}>Confirmar</ThemedText>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+        ) : (
+          <DateTimePicker
+            value={selectedDate}
+            mode="date"
+            display="default"
+            onChange={handleDateChange}
+            minimumDate={new Date()}
+          />
+        )
+      )}
     </ThemedView>
   );
 }
@@ -387,5 +464,19 @@ const styles = StyleSheet.create({
   modalItemText: {
     fontSize: 16,
     color: EarthColors.earthDarker,
+  },
+  datePickerButton: {
+    backgroundColor: EarthColors.blackSoft,
+    borderRadius: 10,
+    paddingVertical: 14,
+    marginHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 10,
+    alignItems: 'center',
+  },
+  datePickerButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: EarthColors.beigeBone,
   },
 });

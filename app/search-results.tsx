@@ -49,24 +49,34 @@ export default function SearchResultsScreen() {
       const data = await getJsonWithAuth(
         `${API_BASE_URL}/viajes/buscar?fecha=${searchParams.date}&origen=${encodeURIComponent(searchParams.origin)}&destino=${encodeURIComponent(searchParams.destination)}`
       );
-      
+
       // Map backend data to frontend format
-      const mappedTrips = data.map((trip: any) => ({
-        id: trip.id,
-        operator: trip.frequency?.cooperative?.name || 'Cooperativa',
-        seatType: trip.busSeatsCount ? `${trip.busSeatsCount} asientos` : 'Bus',
-        price: trip.frequency?.route?.basePrice?.toString() || '0.00',
-        departureTime: formatTime(trip.scheduledDepartureTime),
-        departureCity: trip.routeOrigin || searchParams.origin,
-        arrivalTime: formatTime(trip.scheduledArrivalTime),
-        arrivalCity: trip.routeDestination || searchParams.destination,
-        duration: calculateDuration(trip.scheduledDepartureTime, trip.scheduledArrivalTime),
-      }));
-      
+      const mappedTrips = data.map((trip: any) => {
+        // Calcular hora de llegada si no viene del backend
+        let arrivalTime = trip.scheduledArrivalTime;
+        if (!arrivalTime && trip.scheduledDepartureTime && trip.frequency?.estimatedDuration) {
+          const departure = new Date(trip.scheduledDepartureTime);
+          const arrival = new Date(departure.getTime() + trip.frequency.estimatedDuration * 60000);
+          arrivalTime = arrival.toISOString();
+        }
+
+        return {
+          id: trip.id,
+          operator: trip.frequency?.cooperativeName || 'Cooperativa',
+          seatType: trip.busSeatsCount ? `${trip.busSeatsCount} asientos` : 'Bus',
+          price: trip.frequency?.route?.basePrice?.toFixed(2) || '0.00',
+          departureTime: formatTime(trip.scheduledDepartureTime),
+          departureCity: trip.routeOrigin || searchParams.origin,
+          arrivalTime: formatTime(arrivalTime),
+          arrivalCity: trip.routeDestination || searchParams.destination,
+          duration: calculateDuration(trip.scheduledDepartureTime, arrivalTime),
+        };
+      });
+
       setTrips(mappedTrips);
     } catch (error) {
       console.error('Error loading trips:', error);
-      alert('Error al cargar los viajes');
+      alert('Error al cargar los viajes. Por favor intenta nuevamente.');
     } finally {
       setLoading(false);
     }
