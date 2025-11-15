@@ -79,7 +79,6 @@ export default function SearchScreen() {
       setOrigins(cityNames);
       setDestinations(cityNames);
     } catch (error) {
-      console.error('Error loading cities:', error);
     } finally {
       setLoading(false);
     }

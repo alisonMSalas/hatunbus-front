@@ -51,7 +51,13 @@ export async function postJsonWithAuth<T = any>(url: string, body?: any, init?: 
     const txt = await r.text();
     throw new Error(txt || `HTTP ${r.status}`);
   }
-  return (await r.json()) as T;
+  
+  // Check if response has content before trying to parse JSON
+  const text = await r.text();
+  if (!text || text.trim() === '') {
+    return null as T;
+  }
+  return JSON.parse(text) as T;
 }
 
 export async function putJsonWithAuth<T = any>(url: string, body?: any, init?: FetchOptions): Promise<T> {
@@ -66,5 +72,11 @@ export async function putJsonWithAuth<T = any>(url: string, body?: any, init?: F
     const txt = await r.text();
     throw new Error(txt || `HTTP ${r.status}`);
   }
-  return (await r.json()) as T;
+  
+  // Check if response has content before trying to parse JSON
+  const text = await r.text();
+  if (!text || text.trim() === '') {
+    return null as T;
+  }
+  return JSON.parse(text) as T;
 }

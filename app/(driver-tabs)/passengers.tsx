@@ -39,7 +39,6 @@ export default function DriverPassengersScreen() {
   ];
 
   const handleVerifyID = (passengerId: string) => {
-    console.log('Verificar cédula de pasajero:', passengerId);
     // Aquí irá la lógica para verificar la cédula
   };
 

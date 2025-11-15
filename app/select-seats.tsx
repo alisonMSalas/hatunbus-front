@@ -106,7 +106,6 @@ export default function SelectSeatsScreen() {
 
       setPassengerSeats(initialPassengerSeats);
     } catch (error) {
-      console.error('Error loading seats:', error);
       alert('Error al cargar los asientos del viaje');
     } finally {
       setLoading(false);
@@ -229,14 +228,8 @@ export default function SelectSeatsScreen() {
     const originStopId = params.originStopId as string;
     const destinationStopId = params.destinationStopId as string;
 
-    console.log('=== DEBUG STOPS ===');
-    console.log('Origin Stop ID:', originStopId);
-    console.log('Destination Stop ID:', destinationStopId);
-    console.log('Params completos:', params);
-
     if (!originStopId || !destinationStopId || originStopId === '' || destinationStopId === '') {
       alert('Error: No se encontraron las paradas del viaje. Por favor intenta de nuevo desde la búsqueda.');
-      console.error('IDs de paradas faltantes!');
       return;
     }
 
@@ -255,8 +248,6 @@ export default function SelectSeatsScreen() {
         destinationStopId: destinationStopId,
       };
     });
-
-    console.log('Tickets Data a enviar:', ticketsData);
 
     // Navegar a la pantalla de método de pago con los datos de tickets
     router.push({

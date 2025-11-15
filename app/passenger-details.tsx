@@ -18,11 +18,17 @@ import {
 
 interface PassengerInfo {
   fullName: string;
-  identificationType: string;
   identificationNumber: string;
   email: string;
   phone: string;
   passengerType: 'ADULT' | 'CHILD' | 'SENIOR' | 'DISABLED';
+}
+
+interface PassengerErrors {
+  fullName: string;
+  identificationNumber: string;
+  email: string;
+  phone: string;
 }
 
 export default function PassengerDetailsScreen() {
@@ -37,11 +43,20 @@ export default function PassengerDetailsScreen() {
   const [passengers, setPassengers] = useState<PassengerInfo[]>(
     Array.from({ length: passengersCount }, () => ({
       fullName: '',
-      identificationType: 'Cédula de Identidad',
       identificationNumber: '',
       email: '',
       phone: '',
       passengerType: 'ADULT',
+    }))
+  );
+
+  // Estado para errores de cada pasajero
+  const [passengersErrors, setPassengersErrors] = useState<PassengerErrors[]>(
+    Array.from({ length: passengersCount }, () => ({
+      fullName: '',
+      identificationNumber: '',
+      email: '',
+      phone: '',
     }))
   );
 
@@ -53,11 +68,95 @@ export default function PassengerDetailsScreen() {
   // Estado para controlar qué modal de tipo de pasajero está abierto
   const [showPassengerTypePicker, setShowPassengerTypePicker] = useState<number | null>(null);
 
-  const identificationTypes = [
-    'Cédula de Identidad',
-    'Pasaporte',
-    'Cédula de Extranjería',
-  ];
+  // Validación de cédula ecuatoriana
+  const validateEcuadorianId = (id: string): boolean => {
+    if (id.length !== 10) return false;
+    if (!/^\d+$/.test(id)) return false;
+
+    const province = parseInt(id.substring(0, 2));
+    if (province < 1 || province > 24) return false;
+
+    const digits = id.split('').map(Number);
+    const verifier = digits[9];
+
+    let sum = 0;
+    for (let i = 0; i < 9; i++) {
+      let digit = digits[i];
+      if (i % 2 === 0) {
+        digit *= 2;
+        if (digit > 9) digit -= 9;
+      }
+      sum += digit;
+    }
+
+    const calculatedVerifier = (10 - (sum % 10)) % 10;
+    return verifier === calculatedVerifier;
+  };
+
+  // Validación de email
+  const validateEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  // Validar un campo específico de un pasajero
+  const validateField = (passengerIndex: number, field: keyof PassengerErrors, value: string): boolean => {
+    let error = '';
+
+    switch (field) {
+      case 'fullName':
+        if (!value.trim()) error = 'El nombre completo es obligatorio';
+        break;
+      case 'identificationNumber':
+        if (!value.trim()) {
+          error = 'La cédula es obligatoria';
+        } else if (value.length !== 10) {
+          error = 'La cédula debe tener 10 dígitos';
+        } else if (!/^\d+$/.test(value)) {
+          error = 'La cédula solo debe contener números';
+        } else if (!validateEcuadorianId(value)) {
+          error = 'Cédula ecuatoriana inválida';
+        }
+        break;
+      case 'email':
+        if (!value.trim()) {
+          error = 'El email es obligatorio';
+        } else if (!validateEmail(value)) {
+          error = 'Email inválido';
+        }
+        break;
+      case 'phone':
+        if (!value.trim()) {
+          error = 'El teléfono es obligatorio';
+        } else if (value.length !== 10) {
+          error = 'El teléfono debe tener 10 dígitos';
+        } else if (!/^\d+$/.test(value)) {
+          error = 'El teléfono solo debe contener números';
+        }
+        break;
+    }
+
+    const updatedErrors = [...passengersErrors];
+    updatedErrors[passengerIndex] = {
+      ...updatedErrors[passengerIndex],
+      [field]: error,
+    };
+    setPassengersErrors(updatedErrors);
+
+    return error === '';
+  };
+
+  // Validar todos los campos de un pasajero
+  const validatePassenger = (passengerIndex: number): boolean => {
+    const passenger = passengers[passengerIndex];
+    const isValid = 
+      validateField(passengerIndex, 'fullName', passenger.fullName) &&
+      validateField(passengerIndex, 'identificationNumber', passenger.identificationNumber) &&
+      validateField(passengerIndex, 'email', passenger.email) &&
+      validateField(passengerIndex, 'phone', passenger.phone);
+    
+    return isValid;
+  };
 
   const passengerTypes = [
     { value: 'ADULT', label: 'Adulto' },
@@ -82,16 +181,16 @@ export default function PassengerDetailsScreen() {
   };
 
   const handleSelectSeats = () => {
-    // Verificar que todos los pasajeros tengan información completa
-    const allComplete = passengers.every(p =>
-      p.fullName &&
-      p.identificationNumber &&
-      p.email &&
-      p.phone
-    );
+    // Validar todos los pasajeros
+    let allValid = true;
+    for (let i = 0; i < passengers.length; i++) {
+      if (!validatePassenger(i)) {
+        allValid = false;
+      }
+    }
 
-    if (!allComplete) {
-      alert('Por favor completa la información de todos los pasajeros');
+    if (!allValid) {
+      alert('Por favor corrige los errores en la información de los pasajeros');
       return;
     }
 
@@ -183,34 +282,22 @@ export default function PassengerDetailsScreen() {
                     lightColor={EarthColors.earthDarker} 
                     darkColor={EarthColors.beigeLight} 
                     style={styles.label}>
-                    Nombre Completo
+                    Nombre Completo *
                   </ThemedText>
                   <ThemedTextInput
                     placeholder={`e.g., ${index === 0 ? 'Jane Doe' : 'John Smith'}`}
                     value={passenger.fullName}
-                    onChangeText={(value) => handlePassengerChange(index, 'fullName', value)}
+                    onChangeText={(value) => {
+                      handlePassengerChange(index, 'fullName', value);
+                      validateField(index, 'fullName', value);
+                    }}
+                    onBlur={() => validateField(index, 'fullName', passenger.fullName)}
                     containerStyle={styles.inputContainer}
                     placeholderTextColor={EarthColors.blackSoftOpacity || 'rgba(26, 26, 26, 0.6)'}
                   />
-                </View>
-
-                {/* Identification Type Field */}
-                <View style={styles.fieldContainer}>
-                  <ThemedText 
-                    lightColor={EarthColors.earthDarker} 
-                    darkColor={EarthColors.beigeLight} 
-                    style={styles.label}>
-                    Tipo de Identificación
-                  </ThemedText>
-                  <TouchableOpacity style={styles.selectField}>
-                    <ThemedText 
-                      lightColor={EarthColors.earthDarker} 
-                      darkColor={EarthColors.beigeLight} 
-                      style={styles.selectFieldText}>
-                      {passenger.identificationType}
-                    </ThemedText>
-                    <IconSymbol name="chevron.down" size={20} color={EarthColors.earthDarker} />
-                  </TouchableOpacity>
+                  {passengersErrors[index].fullName ? (
+                    <ThemedText style={styles.errorText}>{passengersErrors[index].fullName}</ThemedText>
+                  ) : null}
                 </View>
 
                 {/* Identification Number Field */}
@@ -219,17 +306,24 @@ export default function PassengerDetailsScreen() {
                     lightColor={EarthColors.earthDarker}
                     darkColor={EarthColors.beigeLight}
                     style={styles.label}>
-                    Número de Identificación
+                    Cédula de Identidad (10 dígitos) *
                   </ThemedText>
                   <ThemedTextInput
                     placeholder="Ingresa 10 dígitos"
                     value={passenger.identificationNumber}
-                    onChangeText={(value) => handlePassengerChange(index, 'identificationNumber', value)}
+                    onChangeText={(value) => {
+                      handlePassengerChange(index, 'identificationNumber', value);
+                      validateField(index, 'identificationNumber', value);
+                    }}
+                    onBlur={() => validateField(index, 'identificationNumber', passenger.identificationNumber)}
                     keyboardType="numeric"
                     maxLength={10}
                     containerStyle={styles.inputContainer}
                     placeholderTextColor={EarthColors.blackSoftOpacity || 'rgba(26, 26, 26, 0.6)'}
                   />
+                  {passengersErrors[index].identificationNumber ? (
+                    <ThemedText style={styles.errorText}>{passengersErrors[index].identificationNumber}</ThemedText>
+                  ) : null}
                 </View>
 
                 {/* Email Field */}
@@ -238,17 +332,24 @@ export default function PassengerDetailsScreen() {
                     lightColor={EarthColors.earthDarker}
                     darkColor={EarthColors.beigeLight}
                     style={styles.label}>
-                    Email
+                    Email *
                   </ThemedText>
                   <ThemedTextInput
                     placeholder="ejemplo@correo.com"
                     value={passenger.email}
-                    onChangeText={(value) => handlePassengerChange(index, 'email', value)}
+                    onChangeText={(value) => {
+                      handlePassengerChange(index, 'email', value);
+                      validateField(index, 'email', value);
+                    }}
+                    onBlur={() => validateField(index, 'email', passenger.email)}
                     keyboardType="email-address"
                     autoCapitalize="none"
                     containerStyle={styles.inputContainer}
                     placeholderTextColor={EarthColors.blackSoftOpacity || 'rgba(26, 26, 26, 0.6)'}
                   />
+                  {passengersErrors[index].email ? (
+                    <ThemedText style={styles.errorText}>{passengersErrors[index].email}</ThemedText>
+                  ) : null}
                 </View>
 
                 {/* Phone Field */}
@@ -257,17 +358,24 @@ export default function PassengerDetailsScreen() {
                     lightColor={EarthColors.earthDarker}
                     darkColor={EarthColors.beigeLight}
                     style={styles.label}>
-                    Teléfono
+                    Teléfono (10 dígitos) *
                   </ThemedText>
                   <ThemedTextInput
                     placeholder="0987654321"
                     value={passenger.phone}
-                    onChangeText={(value) => handlePassengerChange(index, 'phone', value)}
+                    onChangeText={(value) => {
+                      handlePassengerChange(index, 'phone', value);
+                      validateField(index, 'phone', value);
+                    }}
+                    onBlur={() => validateField(index, 'phone', passenger.phone)}
                     keyboardType="phone-pad"
                     maxLength={10}
                     containerStyle={styles.inputContainer}
                     placeholderTextColor={EarthColors.blackSoftOpacity || 'rgba(26, 26, 26, 0.6)'}
                   />
+                  {passengersErrors[index].phone ? (
+                    <ThemedText style={styles.errorText}>{passengersErrors[index].phone}</ThemedText>
+                  ) : null}
                 </View>
 
                 {/* Passenger Type Field */}
@@ -499,6 +607,12 @@ const styles = StyleSheet.create({
   modalItemText: {
     fontSize: 16,
     color: EarthColors.earthDarker,
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 4,
   },
 });
 

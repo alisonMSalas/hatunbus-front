@@ -2,10 +2,12 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { EarthColors } from '@/constants/theme';
+import { useAuth } from '@/contexts/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
 import React from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export type HeaderProps = {
@@ -16,6 +18,7 @@ export type HeaderProps = {
 
 export function Header({ title, showBackButton = true, onBackPress }: HeaderProps) {
   const colorScheme = useColorScheme();
+  const { logout } = useAuth();
 
   const handleBackPress = () => {
     if (onBackPress) {
@@ -23,6 +26,24 @@ export function Header({ title, showBackButton = true, onBackPress }: HeaderProp
     } else {
       router.back();
     }
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Cerrar Sesión',
+      '¿Estás seguro que deseas cerrar sesión?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Cerrar Sesión',
+          style: 'destructive',
+          onPress: async () => {
+            await logout();
+            router.replace('/');
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -50,7 +71,16 @@ export function Header({ title, showBackButton = true, onBackPress }: HeaderProp
             style={styles.headerTitle}>
             {title}
           </ThemedText>
-          <View style={styles.headerSpacer} />
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={handleLogout}
+            activeOpacity={0.7}>
+            <MaterialIcons
+              name="logout"
+              size={24}
+              color={colorScheme === 'dark' ? EarthColors.beigeLight : EarthColors.earthDarker}
+            />
+          </TouchableOpacity>
         </ThemedView>
       </ThemedView>
     </SafeAreaView>
@@ -95,8 +125,11 @@ const styles = StyleSheet.create({
     fontSize: 20,
     letterSpacing: -0.3,
   },
-  headerSpacer: {
+  logoutButton: {
     width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
   },
 });
 

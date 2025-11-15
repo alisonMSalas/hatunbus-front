@@ -38,17 +38,10 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       await login(email, password);
-      // Navegar según rol (aquí inferimos por email como atajo)
-      setTimeout(() => {
-        if (email.toLowerCase().includes('conductor')) {
-          router.replace('/role-selection');
-        } else {
-          router.replace('/(tabs)');
-        }
-      }, 200);
+      // Redirect to index, which will handle navigation based on auth state
+      router.replace('/');
     } catch (error) {
       Alert.alert('Error', 'Credenciales incorrectas o error del servidor');
-      console.error('Error en login:', error);
     } finally {
       setIsLoading(false);
     }

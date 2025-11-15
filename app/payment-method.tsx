@@ -6,10 +6,10 @@ import { EarthColors } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { postJsonWithAuth } from '@/services/api';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
-import * as WebBrowser from 'expo-web-browser';
 import { router, useLocalSearchParams } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -66,7 +66,6 @@ export default function PaymentMethodScreen() {
         setUploadedImage(result.assets[0].uri);
       }
     } catch (error) {
-      console.error('Error al seleccionar imagen:', error);
       Alert.alert('Error', 'No se pudo cargar la imagen');
     }
   };
@@ -95,7 +94,17 @@ export default function PaymentMethodScreen() {
 
     try {
       if (selectedMethod === 'transfer') {
-        // Para TRANSFERENCIA: Crear la compra inmediatamente
+        // PRIMERO: Convertir la imagen a base64 (antes de crear la compra)
+        if (!uploadedImage) {
+          Alert.alert('Error', 'Por favor sube el comprobante de pago');
+          return;
+        }
+
+        const base64 = await FileSystem.readAsStringAsync(uploadedImage, {
+          encoding: 'base64' as any,
+        });
+
+        // SEGUNDO: Crear la compra
         const purchaseData = await postJsonWithAuth(`${API_BASE_URL}/compras`, {
           buyerUserId: user.id,
           purchaseType: 'ONLINE',
@@ -104,7 +113,12 @@ export default function PaymentMethodScreen() {
         });
 
         const purchaseId = purchaseData.id;
-        await handleTransferPayment(purchaseId);
+
+        // TERCERO: Subir el comprobante
+        await postJsonWithAuth(`${API_BASE_URL}/payments/upload-receipt`, {
+          purchaseId,
+          receiptImageBase64: base64,
+        });
 
         // Mostrar mensaje de éxito para transferencia
         Alert.alert(
@@ -122,26 +136,10 @@ export default function PaymentMethodScreen() {
         await initiatePayPalPayment();
       }
     } catch (error: any) {
-      console.error('Error al procesar pago:', error);
       Alert.alert('Error', error.message || 'No se pudo procesar el pago');
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleTransferPayment = async (purchaseId: string) => {
-    if (!uploadedImage) return;
-
-    // Convertir imagen a base64
-    const base64 = await FileSystem.readAsStringAsync(uploadedImage, {
-      encoding: 'base64' as any,
-    });
-
-    // Enviar al backend con autenticación
-    await postJsonWithAuth(`${API_BASE_URL}/payments/upload-receipt`, {
-      purchaseId,
-      receiptImageBase64: base64,
-    });
   };
 
   const checkPaymentStatus = async (paypalOrderId: string): Promise<boolean> => {
@@ -154,7 +152,6 @@ export default function PaymentMethodScreen() {
         tickets: ticketsData,
       });
 
-      console.log('✅ Payment captured successfully!');
       return true;
     } catch (error: any) {
       // Si falla, el pago aún no está completo (esto es normal mientras el usuario paga)
@@ -164,7 +161,6 @@ export default function PaymentMethodScreen() {
       const errorMessage = error.message || '';
 
       if (errorStatus !== 412 && !errorMessage.includes('ORDER_NOT_APPROVED')) {
-        console.log('⚠️ Unexpected error while checking payment:', errorMessage);
       }
       // No mostrar nada si es 412 o ORDER_NOT_APPROVED (usuario aún no ha completado el pago)
       return false;
@@ -185,8 +181,6 @@ export default function PaymentMethodScreen() {
         // Abrir PayPal en el navegador (no esperamos el resultado)
         WebBrowser.openBrowserAsync(response.approvalUrl);
 
-        console.log('PayPal browser opened, starting payment monitoring...');
-
         // Mostrar indicador de espera
         setWaitingForPayment(true);
         Alert.alert(
@@ -202,10 +196,6 @@ export default function PaymentMethodScreen() {
 
         const checkInterval = setInterval(async () => {
           attempts++;
-          // Solo loguear cada 10 intentos para no saturar la consola
-          if (attempts % 10 === 0) {
-            console.log(`🔍 Esperando pago... ${attempts * 3} segundos`);
-          }
 
           // Verificar si el pago se completó
           const completed = await checkPaymentStatus(response.orderId);
@@ -256,7 +246,6 @@ export default function PaymentMethodScreen() {
                         router.replace('/(tabs)/tickets');
                       }, 1500);
                     } catch (error: any) {
-                      console.error('Error al capturar pago:', error);
                       Alert.alert('Error', 'No se pudo completar el pago. Contacta con soporte.');
                     }
                   },
@@ -269,7 +258,6 @@ export default function PaymentMethodScreen() {
         throw new Error('No se recibió URL de aprobación de PayPal');
       }
     } catch (error: any) {
-      console.error('Error al iniciar pago de PayPal:', error);
       Alert.alert('Error', 'No se pudo iniciar el pago con PayPal');
       setIsLoading(false);
     }

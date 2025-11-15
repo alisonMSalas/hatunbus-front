@@ -18,7 +18,6 @@ export default function ScanTicketScreen() {
   const [scanned, setScanned] = useState(false);
 
   const handleEnterCodeManually = () => {
-    console.log('Ingresar código manualmente');
     // Aquí irá la lógica para ingresar código manualmente
     // router.push('/enter-ticket-code');
   };
@@ -27,7 +26,6 @@ export default function ScanTicketScreen() {
     if (scanned) return;
     
     setScanned(true);
-    console.log('Código QR escaneado:', data);
     
     // Aquí procesarías el código QR del boleto
     // Por ejemplo, validar el ticket, mostrar información, etc.
@@ -44,7 +42,6 @@ export default function ScanTicketScreen() {
           text: 'Validar',
           onPress: () => {
             // Aquí iría la lógica para validar el boleto
-            console.log('Validando boleto:', data);
             // router.push('/ticket-validation', { ticketCode: data });
             setScanned(false);
           },

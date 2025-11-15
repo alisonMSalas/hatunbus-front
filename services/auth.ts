@@ -29,13 +29,25 @@ export async function login(email: string, password: string): Promise<LoginRespo
   const data = (await resp.json()) as LoginResponse;
 
   // Store token and user securely and in-memory
+  // Only store essential user data to avoid exceeding SecureStore 2048 bytes limit
   try {
     tokenCache = data.token;
     await SecureStore.setItemAsync(JWT_KEY, data.token);
-    await SecureStore.setItemAsync(USER_KEY, JSON.stringify(data.user ?? {}));
+    
+    // Extract only essential user fields (exclude large fields like profilePhoto)
+    const essentialUserData = data.user ? {
+      id: data.user.id,
+      email: data.user.email,
+      role: data.user.role,
+      firstNames: data.user.firstNames,
+      lastNames: data.user.lastNames,
+      idCard: data.user.idCard,
+      phone: data.user.phone,
+    } : {};
+    
+    await SecureStore.setItemAsync(USER_KEY, JSON.stringify(essentialUserData));
   } catch (e) {
     // If secure store fails, swallow but warn
-    console.warn('SecureStore error saving token', e);
   }
 
   return data;
@@ -98,7 +110,6 @@ export async function logout(): Promise<void> {
     await SecureStore.deleteItemAsync(JWT_KEY);
     await SecureStore.deleteItemAsync(USER_KEY);
   } catch (e) {
-    console.warn('SecureStore error deleting token', e);
   }
 }
 

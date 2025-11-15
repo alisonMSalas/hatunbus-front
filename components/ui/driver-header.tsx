@@ -19,7 +19,7 @@ export function DriverHeader() {
 
   const handleLogout = async () => {
     await logout();
-    router.replace('/login');
+    router.replace('/');
     setShowMenu(false);
   };
 

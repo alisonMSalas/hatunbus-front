@@ -77,9 +77,6 @@ export default function SearchResultsScreen() {
         const originCityId = trip.frequency?.route?.originCityId || trip.routeOriginCityId;
         const destinationCityId = trip.frequency?.route?.destinationCityId || trip.routeDestinationCityId;
 
-        console.log('Origin City ID:', originCityId);
-        console.log('Destination City ID:', destinationCityId);
-
         return {
           id: trip.id,
           operator: trip.frequency?.cooperativeName || 'Cooperativa',
@@ -97,7 +94,6 @@ export default function SearchResultsScreen() {
 
       setTrips(mappedTrips);
     } catch (error) {
-      console.error('Error loading trips:', error);
       alert('Error al cargar los viajes. Por favor intenta nuevamente.');
     } finally {
       setLoading(false);

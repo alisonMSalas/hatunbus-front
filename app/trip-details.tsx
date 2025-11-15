@@ -72,7 +72,6 @@ export default function TripDetailsScreen() {
 
       setTripData(formattedTrip);
     } catch (error) {
-      console.error('Error loading trip details:', error);
       alert('Error al cargar los detalles del viaje');
     } finally {
       setLoading(false);
