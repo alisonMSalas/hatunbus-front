@@ -4,11 +4,10 @@ import React from 'react';
 import { Platform } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors, EarthColors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-export default function TabLayout() {
+export default function DriverTabLayout() {
   const colorScheme = useColorScheme();
 
   return (
@@ -47,17 +46,19 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Buscar',
-          tabBarIcon: ({ color, focused }) => (
-            <IconSymbol size={24} name="magnifyingglass" color={color} />
+          title: 'Inicio',
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="home" size={24} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="tickets"
+        name="passengers"
         options={{
-          title: 'Boletos',
-          tabBarIcon: ({ color }) => <IconSymbol size={24} name="ticket.fill" color={color} />,
+          title: 'Pasajeros',
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="people" size={24} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
@@ -69,13 +70,7 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Perfil',
-          tabBarIcon: ({ color }) => <IconSymbol size={24} name="person.fill" color={color} />,
-        }}
-      />
     </Tabs>
   );
 }
+
