@@ -1,57 +1,211 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { DriverHeader } from '@/components/ui/driver-header';
+import { API_BASE_URL } from '@/constants/api';
 import { EarthColors } from '@/constants/theme';
+import { getJsonWithAuth } from '@/services/api';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { router } from 'expo-router';
-import React, { useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import {
+    ActivityIndicator,
+    RefreshControl,
     ScrollView,
     StyleSheet,
     TouchableOpacity,
     View,
 } from 'react-native';
 
-interface Passenger {
+interface Ticket {
   id: string;
-  name: string;
-  seat: string;
-  status: 'scanned' | 'pending';
+  passengerName: string;
+  seatNumber: string;
+  status: 'PENDING_PAYMENT' | 'PAID' | 'USED' | 'CANCELED' | 'EXPIRED';
+  originStopName: string;
+  destinationStopName: string;
+  passengerIdCard?: string;
+  usageDate?: string;
+}
+
+interface Trip {
+  id: string;
+  frequency: {
+    route: {
+      origin: string;
+      destination: string;
+    };
+  };
+  scheduledDepartureTime: string;
+  estimatedArrivalTime?: string;
+  status: string;
 }
 
 export default function DriverPassengersScreen() {
   const [sortBy, setSortBy] = useState<'seat' | 'name'>('seat');
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [trip, setTrip] = useState<Trip | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [tripId, setTripId] = useState<string | null>(null);
 
-  // Datos de ejemplo - en el futuro vendrán de la API
-  const tripDetails = {
-    route: 'Lima a Arequipa',
-    departureTime: '12:00 PM',
-    arrivalTime: '4:00 PM',
+  const loadPassengers = async () => {
+    try {
+      setLoading(true);
+      
+      // Primero obtener el viaje en curso (IN_PROGRESS)
+      const tripsResponse = await getJsonWithAuth<any>(`${API_BASE_URL}/viajes/conductor/en-curso`);
+      
+      console.log('Trips response:', JSON.stringify(tripsResponse, null, 2));
+      
+      // Verificar si la respuesta es un array o un objeto
+      let currentTrip;
+      if (Array.isArray(tripsResponse)) {
+        if (tripsResponse.length === 0) {
+          setTickets([]);
+          setTrip(null);
+          setTripId(null);
+          return;
+        }
+        currentTrip = tripsResponse[0];
+      } else if (tripsResponse && tripsResponse.id) {
+        // Es un objeto directo
+        currentTrip = tripsResponse;
+      } else {
+        // No hay viaje en curso
+        setTickets([]);
+        setTrip(null);
+        setTripId(null);
+        return;
+      }
+
+      console.log('Current trip:', currentTrip);
+      setTrip(currentTrip);
+      setTripId(currentTrip.id);
+
+      // Cargar los boletos del viaje
+      const ticketsResponse = await getJsonWithAuth<Ticket[]>(`${API_BASE_URL}/boletos/viaje/${currentTrip.id}`);
+      console.log('Tickets response:', ticketsResponse);
+      setTickets(ticketsResponse || []);
+      
+    } catch (error) {
+      console.error('Error al cargar pasajeros:', error);
+      setTickets([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
-  const passengers: Passenger[] = [
-    { id: '1', name: 'Carlos Ramirez', seat: '1A', status: 'scanned' },
-    { id: '2', name: 'Sofia Vargas', seat: '2B', status: 'pending' },
-    { id: '3', name: 'Diego Rodriguez', seat: '3C', status: 'pending' },
-    { id: '4', name: 'Isabella Torres', seat: '4D', status: 'scanned' },
-    { id: '5', name: 'Mateo Fernandez', seat: '5A', status: 'scanned' },
-    { id: '6', name: 'Alejandro Castro', seat: '6B', status: 'pending' },
-  ];
+  // Cargar cuando la pantalla recibe foco
+  useFocusEffect(
+    useCallback(() => {
+      loadPassengers();
+    }, [])
+  );
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    loadPassengers();
+  };
 
   const handleVerifyID = (passengerId: string) => {
     // Aquí irá la lógica para verificar la cédula
   };
 
   const handleScanTicket = () => {
-    router.push('/scan-ticket');
+    if (tripId) {
+      router.push(`/scan-ticket?tripId=${tripId}`);
+    }
   };
 
-  const sortedPassengers = [...passengers].sort((a, b) => {
+  const sortedTickets = [...tickets].sort((a, b) => {
     if (sortBy === 'seat') {
-      return a.seat.localeCompare(b.seat);
+      return a.seatNumber.localeCompare(b.seatNumber);
     }
-    return a.name.localeCompare(b.name);
+    return a.passengerName.localeCompare(b.passengerName);
   });
+
+  const scannedCount = tickets.filter(t => t.status === 'USED').length;
+  const pendingCount = tickets.filter(t => t.status === 'PAID').length;
+
+  if (loading) {
+    return (
+      <ThemedView style={styles.container}>
+        <DriverHeader />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={EarthColors.earthPrimary} />
+          <ThemedText style={styles.loadingText}>Cargando pasajeros...</ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  if (!trip) {
+    return (
+      <ThemedView style={styles.container}>
+        <DriverHeader />
+        <View style={styles.emptyContainer}>
+          <MaterialIcons name="directions-bus-filled" size={64} color={EarthColors.grayEarth} />
+          <ThemedText style={styles.emptyText}>No hay viaje en progreso</ThemedText>
+          <ThemedText style={[styles.emptyText, { fontSize: 14, marginTop: -8 }]}>
+            Inicia un viaje desde la pestaña "Inicio"
+          </ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  if (tickets.length === 0) {
+    return (
+      <ThemedView style={styles.container}>
+        <DriverHeader />
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              colors={[EarthColors.earthPrimary]}
+            />
+          }>
+          <View style={styles.tripDetailsCard}>
+            <MaterialIcons
+              name="directions-bus"
+              size={32}
+              color={EarthColors.earthPrimary}
+            />
+            <View style={styles.tripDetailsContent}>
+              <ThemedText
+                lightColor={EarthColors.earthDarker}
+                darkColor={EarthColors.beigeLight}
+                style={styles.tripRoute}>
+                {trip.frequency.route.origin} → {trip.frequency.route.destination}
+              </ThemedText>
+              <ThemedText
+                lightColor={EarthColors.earthDark}
+                darkColor={EarthColors.grayEarth}
+                style={styles.tripTime}>
+                {new Date(trip.scheduledDepartureTime).toLocaleString('es-ES', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  day: '2-digit',
+                  month: 'short'
+                })}
+              </ThemedText>
+            </View>
+          </View>
+          <View style={styles.emptyContainer}>
+            <MaterialIcons name="people-outline" size={64} color={EarthColors.grayEarth} />
+            <ThemedText style={styles.emptyText}>No hay pasajeros registrados</ThemedText>
+            <ThemedText style={[styles.emptyText, { fontSize: 14, marginTop: -8 }]}>
+              Aún no se han vendido boletos para este viaje
+            </ThemedText>
+          </View>
+        </ScrollView>
+      </ThemedView>
+    );
+  }
 
   return (
     <ThemedView style={styles.container}>
@@ -60,7 +214,14 @@ export default function DriverPassengersScreen() {
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[EarthColors.earthPrimary]}
+          />
+        }>
         
         {/* Detalles del Viaje */}
         <View style={styles.tripDetailsCard}>
@@ -74,14 +235,37 @@ export default function DriverPassengersScreen() {
               lightColor={EarthColors.earthDarker}
               darkColor={EarthColors.beigeLight}
               style={styles.tripRoute}>
-              {tripDetails.route}
+              {trip.frequency.route.origin} → {trip.frequency.route.destination}
             </ThemedText>
             <ThemedText
               lightColor={EarthColors.earthDark}
               darkColor={EarthColors.grayEarth}
               style={styles.tripTime}>
-              {tripDetails.departureTime} - {tripDetails.arrivalTime}
+              {new Date(trip.scheduledDepartureTime).toLocaleString('es-ES', {
+                hour: '2-digit',
+                minute: '2-digit',
+                day: '2-digit',
+                month: 'short'
+              })}
             </ThemedText>
+          </View>
+        </View>
+
+        {/* Estadísticas de Escaneo */}
+        <View style={styles.statsContainer}>
+          <View style={styles.statCard}>
+            <MaterialIcons name="check-circle" size={24} color="#10B981" />
+            <ThemedText style={[styles.statNumber, { color: '#10B981' }]}>
+              {scannedCount}
+            </ThemedText>
+            <ThemedText style={styles.statLabel}>Escaneados</ThemedText>
+          </View>
+          <View style={styles.statCard}>
+            <MaterialIcons name="hourglass-empty" size={24} color="#F59E0B" />
+            <ThemedText style={[styles.statNumber, { color: '#F59E0B' }]}>
+              {pendingCount}
+            </ThemedText>
+            <ThemedText style={styles.statLabel}>Pendientes</ThemedText>
           </View>
         </View>
 
@@ -91,7 +275,7 @@ export default function DriverPassengersScreen() {
             lightColor={EarthColors.earthDarker}
             darkColor={EarthColors.beigeLight}
             style={styles.listTitle}>
-            Lista de Pasajeros ({passengers.length})
+            Lista de Pasajeros ({tickets.length})
           </ThemedText>
           <View style={styles.sortContainer}>
             <ThemedText
@@ -121,30 +305,36 @@ export default function DriverPassengersScreen() {
 
         {/* Passenger List */}
         <View style={styles.passengerList}>
-          {sortedPassengers.map((passenger) => (
+          {sortedTickets.map((ticket) => (
             <View
-              key={passenger.id}
+              key={ticket.id}
               style={[
                 styles.passengerCard,
-                passenger.status === 'pending' && styles.pendingCard,
+                ticket.status === 'PAID' && styles.pendingCard,
               ]}>
               <View style={styles.passengerInfo}>
                 <ThemedText
                   lightColor={EarthColors.earthDarker}
                   darkColor={EarthColors.beigeLight}
                   style={styles.passengerName}>
-                  {passenger.name}
+                  {ticket.passengerName}
                 </ThemedText>
                 <ThemedText
                   lightColor={EarthColors.earthDark}
                   darkColor={EarthColors.grayEarth}
                   style={styles.passengerSeat}>
-                  Asiento {passenger.seat}
+                  Asiento {ticket.seatNumber}
                 </ThemedText>
-                {passenger.status === 'pending' && (
+                <ThemedText
+                  lightColor={EarthColors.earthDark}
+                  darkColor={EarthColors.grayEarth}
+                  style={styles.passengerRoute}>
+                  {ticket.originStopName} → {ticket.destinationStopName}
+                </ThemedText>
+                {ticket.status === 'PAID' && (
                   <TouchableOpacity
                     style={styles.verifyButton}
-                    onPress={() => handleVerifyID(passenger.id)}
+                    onPress={() => handleVerifyID(ticket.id)}
                     activeOpacity={0.7}>
                     <MaterialIcons
                       name="badge"
@@ -161,7 +351,7 @@ export default function DriverPassengersScreen() {
                 )}
               </View>
               <View style={styles.statusContainer}>
-                {passenger.status === 'scanned' ? (
+                {ticket.status === 'USED' ? (
                   <>
                     <MaterialIcons
                       name="check-circle"
@@ -174,6 +364,17 @@ export default function DriverPassengersScreen() {
                       style={styles.statusText}>
                       Escaneado
                     </ThemedText>
+                    {ticket.usageDate && (
+                      <ThemedText
+                        lightColor={EarthColors.grayEarth}
+                        darkColor={EarthColors.grayEarth}
+                        style={styles.usageTime}>
+                        {new Date(ticket.usageDate).toLocaleTimeString('es-ES', {
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </ThemedText>
+                    )}
                   </>
                 ) : (
                   <>
@@ -319,7 +520,66 @@ const styles = StyleSheet.create({
   },
   passengerSeat: {
     fontSize: 14,
+    marginBottom: 4,
+  },
+  passengerRoute: {
+    fontSize: 12,
     marginBottom: 8,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: EarthColors.earthDark,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+    padding: 32,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: EarthColors.grayEarth,
+    textAlign: 'center',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: EarthColors.whiteBone,
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    gap: 8,
+    shadowColor: EarthColors.blackSoft,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: EarthColors.grayEarth,
+  },
+  usageTime: {
+    fontSize: 10,
+    marginTop: 2,
   },
   verifyButton: {
     flexDirection: 'row',

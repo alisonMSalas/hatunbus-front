@@ -45,15 +45,10 @@ export default function TicketDetailScreen() {
     });
   };
 
-  // Generar el contenido del QR code (puede incluir el ID del ticket y otros datos)
-  const qrContent = JSON.stringify({
-    ticketId: ticketData.ticketId,
-    route: ticketData.route,
-    seat: ticketData.seat,
-    date: ticketData.date,
-    time: ticketData.time,
-    passenger: ticketData.passenger,
-  });
+  // El QR code debe venir del backend (qrCode real del ticket)
+  // Por ahora usamos el ticketId como fallback si no viene el qrCode
+  const qrCodeFromParams = Array.isArray(params.qrCode) ? params.qrCode[0] : params.qrCode;
+  const qrContent = qrCodeFromParams || ticketData.ticketId;
 
   return (
     <ThemedView style={styles.container}>
