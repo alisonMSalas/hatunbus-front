@@ -30,6 +30,9 @@ interface Trip {
   ticketId: string;
   tripId: string;
   scheduledDepartureTime: string;
+  qrCode?: string;
+  ticketStatus?: 'PAID' | 'USED' | 'PENDING_PAYMENT' | 'CANCELED' | 'EXPIRED';
+  tripStatus?: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELED';
 }
 
 interface GroupedTrip {
@@ -89,11 +92,29 @@ export default function TicketsScreen() {
       purchases.forEach((purchase: any) => {
         if (purchase.tickets && purchase.tickets.length > 0) {
           purchase.tickets.forEach((ticket: any) => {
-            // Solo mostrar tickets PAGADOS y NO USADOS (activos)
-            // - Debe estar PAID
-            // - NO debe tener usageDate (no ha sido escaneado)
-            if (ticket.status !== 'PAID' || ticket.usageDate != null) {
-              return; // Saltar tickets que no están pagados o ya fueron usados
+            // Log para debug
+            console.log('Ticket:', {
+              id: ticket.id,
+              status: ticket.status,
+              tripStatus: ticket.tripStatus,
+              route: `${ticket.originStopName} -> ${ticket.destinationStopName}`
+            });
+            
+            // NUEVA LÓGICA:
+            // Mostrar tickets que:
+            // 1. Estén PAID o USED (no cancelados, no expirados, no pending_payment)
+            // 2. El viaje NO esté COMPLETED ni CANCELED (aún está activo)
+            
+            // Filtrar por status del ticket
+            if (ticket.status !== 'PAID' && ticket.status !== 'USED') {
+              console.log('Ticket filtrado por status:', ticket.status);
+              return; // Saltar tickets cancelados, expirados o pendientes de pago
+            }
+            
+            // Filtrar por status del viaje - NO mostrar viajes completados o cancelados
+            if (ticket.tripStatus === 'COMPLETED' || ticket.tripStatus === 'CANCELED') {
+              console.log('Ticket filtrado por tripStatus:', ticket.tripStatus);
+              return; // Este ticket ya debe estar en el historial
             }
 
             const tripDate = new Date(ticket.scheduledDepartureTime || ticket.trip?.scheduledDepartureTime || ticket.trip?.date);
@@ -115,6 +136,9 @@ export default function TicketsScreen() {
                 passenger: ticket.passengerName || user.firstName || 'Pasajero',
                 cooperative: ticket.cooperativeName || 'Cooperativa',
                 bus: ticket.busPlate || 'Bus',
+                qrCode: ticket.qrCode,
+                ticketStatus: ticket.status,
+                tripStatus: ticket.tripStatus,
               };
               upcoming.push(trip);
             }
@@ -198,6 +222,7 @@ export default function TicketsScreen() {
         cooperative: ticket.cooperative,
         bus: ticket.bus,
         ticketId: ticket.ticketId,
+        qrCode: ticket.qrCode || '',
       },
     });
   };
@@ -266,12 +291,20 @@ export default function TicketsScreen() {
                   <MaterialIcons name="airline-seat-recline-normal" size={16} color={EarthColors.earthPrimary} />
                   <ThemedText style={styles.seatNumber}>{ticket.seat}</ThemedText>
                 </View>
-                <ThemedText
-                  lightColor={EarthColors.earthDarker}
-                  darkColor={EarthColors.beigeLight}
-                  style={styles.passengerName}>
-                  {ticket.passenger}
-                </ThemedText>
+                <View style={styles.passengerInfo}>
+                  <ThemedText
+                    lightColor={EarthColors.earthDarker}
+                    darkColor={EarthColors.beigeLight}
+                    style={styles.passengerName}>
+                    {ticket.passenger}
+                  </ThemedText>
+                  {ticket.ticketStatus === 'USED' && (
+                    <View style={styles.scannedBadge}>
+                      <MaterialIcons name="check-circle" size={14} color="#10B981" />
+                      <ThemedText style={styles.scannedText}>Escaneado</ThemedText>
+                    </View>
+                  )}
+                </View>
               </View>
               <TouchableOpacity
                 style={styles.viewQRButton}
@@ -456,10 +489,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: EarthColors.earthPrimary,
   },
+  passengerInfo: {
+    flex: 1,
+    gap: 4,
+  },
   passengerName: {
     fontSize: 14,
     fontWeight: '600',
-    flex: 1,
+  },
+  scannedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#D1FAE5',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  scannedText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#10B981',
   },
   viewQRButton: {
     flexDirection: 'row',

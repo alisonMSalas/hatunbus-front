@@ -95,16 +95,23 @@ export default function HistoryScreen() {
           purchase.tickets.forEach((ticket: any) => {
             const tripDate = new Date(ticket.scheduledDepartureTime || ticket.trip?.scheduledDepartureTime || ticket.trip?.date);
 
+            // NUEVA LÓGICA:
             // Mostrar en historial si:
-            // 1. El ticket fue USADO (escaneado por conductor)
-            // 2. O si el viaje ya pasó y el ticket estaba PAID
-            const isUsed = ticket.status === 'USED' || ticket.usageDate != null;
+            // 1. El viaje está COMPLETED (conductor finalizó el viaje)
+            // 2. O si el viaje está CANCELED
+            // 3. O si es un viaje antiguo que ya pasó
+            
+            const tripIsCompleted = ticket.tripStatus === 'COMPLETED';
+            const tripIsCanceled = ticket.tripStatus === 'CANCELED';
             const isPast = tripDate < now;
-            const shouldShowInHistory = isUsed || (isPast && ticket.status === 'PAID');
+            
+            const shouldShowInHistory = tripIsCompleted || tripIsCanceled || isPast;
 
             if (shouldShowInHistory) {
-              // Determinar si el viaje fue completado o perdido
-              const tripStatus: 'COMPLETED' | 'MISSED' = isUsed ? 'COMPLETED' : 'MISSED';
+              // Determinar el estado del ticket:
+              // - COMPLETED: Si fue escaneado (USED)
+              // - MISSED: Si NO fue escaneado (PAID) y el viaje terminó/pasó
+              const ticketStatus: 'COMPLETED' | 'MISSED' = ticket.status === 'USED' ? 'COMPLETED' : 'MISSED';
 
               const trip: HistoryTicket = {
                 id: purchase.id,
@@ -119,7 +126,7 @@ export default function HistoryScreen() {
                 passenger: ticket.passengerName || user.firstName || 'Pasajero',
                 bus: ticket.busPlate || 'Bus',
                 scheduledDepartureTime: ticket.scheduledDepartureTime,
-                status: tripStatus,
+                status: ticketStatus,
                 usageDate: ticket.usageDate,
                 validatingDriver: ticket.validatingDriver,
               };

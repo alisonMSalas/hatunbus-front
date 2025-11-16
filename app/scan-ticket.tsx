@@ -1,53 +1,140 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { EarthColors } from '@/constants/theme';
+import { API_BASE_URL } from '@/constants/api';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import {
     Alert,
     StyleSheet,
     TouchableOpacity,
     View,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuth } from '@/contexts/AuthContext';
+import { postJsonWithAuth } from '@/services/api';
 
 export default function ScanTicketScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [lastScanTime, setLastScanTime] = useState(0);
+  const { user } = useAuth();
+  const { tripId } = useLocalSearchParams<{ tripId: string }>();
 
   const handleEnterCodeManually = () => {
     // Aquí irá la lógica para ingresar código manualmente
     // router.push('/enter-ticket-code');
   };
 
-  const handleBarCodeScanned = ({ type, data }: { type: string; data: string }) => {
-    if (scanned) return;
+  const handleBarCodeScanned = async ({ type, data }: { type: string; data: string }) => {
+    // Evitar escaneos múltiples con cooldown de 3 segundos
+    const now = Date.now();
+    if (scanned || validating || (now - lastScanTime < 3000)) {
+      return;
+    }
+    
+    setLastScanTime(now);
+    
+    // Verificar que tengamos el tripId
+    if (!tripId) {
+      Alert.alert('Error', 'No se ha especificado el viaje a validar');
+      return;
+    }
+    
+    // Verificar que tengamos el usuario
+    if (!user || !user.id) {
+      Alert.alert('Error', 'No se pudo obtener información del conductor');
+      return;
+    }
+    
+    // Verificar que el usuario sea un conductor
+    console.log('Usuario completo:', JSON.stringify(user, null, 2));
+    
+    if (user.role !== 'DRIVER') {
+      Alert.alert('Error', `Este usuario no es un conductor. Rol actual: ${user.role}`);
+      setScanned(false);
+      return;
+    }
     
     setScanned(true);
+    setValidating(true);
     
-    // Aquí procesarías el código QR del boleto
-    // Por ejemplo, validar el ticket, mostrar información, etc.
-    Alert.alert(
-      'Boleto Escaneado',
-      `Código: ${data}\n\n¿Deseas validar este boleto?`,
-      [
-        {
-          text: 'Cancelar',
-          onPress: () => setScanned(false),
-          style: 'cancel',
-        },
-        {
-          text: 'Validar',
-          onPress: () => {
-            // Aquí iría la lógica para validar el boleto
-            // router.push('/ticket-validation', { ticketCode: data });
-            setScanned(false);
-          },
-        },
-      ]
-    );
+    console.log('========================================');
+    console.log('INICIANDO VALIDACIÓN DE TICKET');
+    console.log('QR Code:', data.substring(0, 10) + '...');
+    console.log('Driver ID:', user.id);
+    console.log('Driver Role:', user.role);
+    console.log('Trip ID:', tripId);
+    console.log('URL completa:', API_BASE_URL + '/boletos/validar');
+    console.log('========================================');
+    
+    try {
+      const response = await postJsonWithAuth<any>(`${API_BASE_URL}/boletos/validar`, {
+        qrCode: data,
+        driverId: user.id,
+        tripId: tripId
+      });
+      
+      console.log('========================================');
+      console.log('RESPUESTA RECIBIDA');
+      console.log('Response:', JSON.stringify(response, null, 2));
+      console.log('========================================');
+
+      if (response.valid) {
+        const ticket = response.ticket;
+        Alert.alert(
+          '✅ Boleto Válido',
+          `${response.message}\n\n` +
+          `Pasajero: ${ticket.passengerName}\n` +
+          `Asiento: ${ticket.seatNumber}\n` +
+          `Origen: ${ticket.originStopName}\n` +
+          `Destino: ${ticket.destinationStopName}\n` +
+          `Ruta: ${ticket.routeName}\n` +
+          `Bus: ${ticket.busPlate}\n` +
+          `Fecha: ${new Date(ticket.scheduledDepartureTime).toLocaleDateString()}`,
+          [{ 
+            text: 'OK', 
+            onPress: () => { 
+              setScanned(false); 
+              setValidating(false);
+              // Resetear cooldown después de un delay adicional
+              setTimeout(() => setLastScanTime(0), 500);
+            } 
+          }]
+        );
+      } else {
+        Alert.alert(
+          '❌ Boleto Inválido',
+          response.message,
+          [{ 
+            text: 'OK', 
+            onPress: () => { 
+              setScanned(false); 
+              setValidating(false);
+              setTimeout(() => setLastScanTime(0), 500);
+            } 
+          }]
+        );
+      }
+    } catch (error: any) {
+      console.error('Error al validar ticket:', error);
+      Alert.alert(
+        'Error',
+        error.message || 'Error al validar el boleto',
+        [{ 
+          text: 'OK', 
+          onPress: () => { 
+            setScanned(false); 
+            setValidating(false);
+            setTimeout(() => setLastScanTime(0), 500);
+          } 
+        }]
+      );
+    }
   };
 
   if (!permission) {
@@ -132,6 +219,19 @@ export default function ScanTicketScreen() {
               {/* Bottom Right Corner */}
               <View style={[styles.corner, styles.bottomRight]} />
             </View>
+            
+            {/* Validating Overlay */}
+            {validating && (
+              <View style={styles.validatingOverlay}>
+                <ActivityIndicator size="large" color={EarthColors.yellowOchre} />
+                <ThemedText
+                  lightColor={EarthColors.beigeBone}
+                  darkColor={EarthColors.beigeBone}
+                  style={styles.validatingText}>
+                  Validando boleto...
+                </ThemedText>
+              </View>
+            )}
           </CameraView>
         </View>
       </View>
@@ -316,6 +416,22 @@ const styles = StyleSheet.create({
   permissionButtonText: {
     fontSize: 16,
     fontWeight: '700',
+  },
+  validatingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  validatingText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

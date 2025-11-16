@@ -1,119 +1,154 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { DriverHeader } from '@/components/ui/driver-header';
+import { API_BASE_URL } from '@/constants/api';
 import { EarthColors } from '@/constants/theme';
+import { getJsonWithAuth } from '@/services/api';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ScrollView,
-    StyleSheet,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
-interface TripHistory {
+interface Trip {
   id: string;
-  route: string;
-  date: string;
-  departureTime: string;
-  arrivalTime: string;
-  passengers: number;
-  totalSeats: number;
-  status: 'completed' | 'cancelled';
-  revenue?: number;
+  frequency: {
+    route: {
+      origin: string;
+      destination: string;
+    };
+    departureTime: string;
+  };
+  busPlate: string;
+  busSeatsCount: number;
+  scheduledDate: string;
+  scheduledDepartureTime: string;
+  scheduledArrivalTime?: string;
+  status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELED' | 'RESCHEDULED';
+  ticketsCount?: number;
+  occupiedSeats?: number;
 }
 
 export default function DriverHistoryScreen() {
-  const [filter, setFilter] = useState<'all' | 'completed' | 'cancelled'>('all');
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Datos de ejemplo - en el futuro vendrán de la API
-  const trips: TripHistory[] = [
-    {
-      id: '1',
-      route: 'Lima - Arequipa',
-      date: '15/03/2024',
-      departureTime: '12:00 PM',
-      arrivalTime: '4:00 PM',
-      passengers: 38,
-      totalSeats: 40,
-      status: 'completed',
-      revenue: 950,
-    },
-    {
-      id: '2',
-      route: 'Arequipa - Cusco',
-      date: '14/03/2024',
-      departureTime: '8:00 AM',
-      arrivalTime: '2:00 PM',
-      passengers: 40,
-      totalSeats: 40,
-      status: 'completed',
-      revenue: 1000,
-    },
-    {
-      id: '3',
-      route: 'Cusco - Lima',
-      date: '13/03/2024',
-      departureTime: '10:00 AM',
-      arrivalTime: '6:00 PM',
-      passengers: 35,
-      totalSeats: 40,
-      status: 'completed',
-      revenue: 875,
-    },
-    {
-      id: '4',
-      route: 'Lima - Trujillo',
-      date: '12/03/2024',
-      departureTime: '6:00 AM',
-      arrivalTime: '12:00 PM',
-      passengers: 0,
-      totalSeats: 40,
-      status: 'cancelled',
-    },
-    {
-      id: '5',
-      route: 'Trujillo - Lima',
-      date: '11/03/2024',
-      departureTime: '2:00 PM',
-      arrivalTime: '8:00 PM',
-      passengers: 32,
-      totalSeats: 40,
-      status: 'completed',
-      revenue: 800,
-    },
-  ];
+  const loadHistory = async () => {
+    try {
+      const timestamp = new Date().getTime();
+      const data = await getJsonWithAuth<Trip[]>(`${API_BASE_URL}/viajes/conductor/historial?t=${timestamp}`);
+      setTrips(data);
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo cargar el historial de viajes');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
-  const filteredTrips = trips.filter(trip => {
-    if (filter === 'all') return true;
-    return trip.status === filter;
-  });
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadHistory();
+  }, []);
+
 
   const getStatusColor = (status: string) => {
-    return status === 'completed' ? '#10B981' : '#EF4444';
+    switch (status) {
+      case 'COMPLETED':
+        return '#10B981'; // Verde
+      case 'CANCELED':
+        return '#EF4444'; // Rojo
+      case 'IN_PROGRESS':
+        return '#F59E0B'; // Ámbar
+      case 'SCHEDULED':
+        return '#3B82F6'; // Azul
+      default:
+        return '#6B7280'; // Gris
+    }
   };
 
   const getStatusText = (status: string) => {
-    return status === 'completed' ? 'Completado' : 'Cancelado';
+    switch (status) {
+      case 'COMPLETED':
+        return 'Completado';
+      case 'CANCELED':
+        return 'Cancelado';
+      case 'IN_PROGRESS':
+        return 'En Progreso';
+      case 'SCHEDULED':
+        return 'Programado';
+      case 'RESCHEDULED':
+        return 'Reprogramado';
+      default:
+        return status;
+    }
   };
 
-  const totalRevenue = trips
-    .filter(t => t.status === 'completed' && t.revenue)
-    .reduce((sum, trip) => sum + (trip.revenue || 0), 0);
+  const formatDateTime = (dateString: string, timeString?: string) => {
+    const date = new Date(dateString);
+    const dateFormat = date.toLocaleDateString('es-ES', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
 
-  const totalTrips = trips.filter(t => t.status === 'completed').length;
+    if (timeString) {
+      const [hours, minutes] = timeString.split(':');
+      date.setHours(parseInt(hours), parseInt(minutes));
+      const timeFormat = date.toLocaleTimeString('es-ES', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+      return { date: dateFormat, time: timeFormat };
+    }
+
+    return { date: dateFormat, time: '' };
+  };
+
+  const totalTrips = trips.filter((t) => t.status === 'COMPLETED').length;
   const totalPassengers = trips
-    .filter(t => t.status === 'completed')
-    .reduce((sum, trip) => sum + trip.passengers, 0);
+    .filter((t) => t.status === 'COMPLETED')
+    .reduce((sum, trip) => sum + (trip.ticketsCount || trip.occupiedSeats || 0), 0);
+
+  if (loading) {
+    return (
+      <ThemedView style={styles.container}>
+        <DriverHeader />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={EarthColors.earthDark} />
+          <ThemedText style={styles.loadingText}>Cargando historial...</ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
 
   return (
     <ThemedView style={styles.container}>
       <DriverHeader />
-      
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={EarthColors.earthDark}
+          />
+        }>
         
         {/* Estadísticas Resumen */}
         <View style={styles.statsContainer}>
@@ -165,140 +200,118 @@ export default function DriverHistoryScreen() {
               lightColor={EarthColors.earthDarker}
               darkColor={EarthColors.beigeLight}
               style={styles.statValue}>
-              ${totalRevenue}
+              --
             </ThemedText>
             <ThemedText
               lightColor={EarthColors.earthDark}
               darkColor={EarthColors.grayEarth}
               style={styles.statLabel}>
-              Ingresos
+              Calificación
             </ThemedText>
           </View>
         </View>
 
-        {/* Filtros */}
-        <View style={styles.filterContainer}>
-          <TouchableOpacity
-            style={[styles.filterButton, filter === 'all' && styles.filterButtonActive]}
-            onPress={() => setFilter('all')}
-            activeOpacity={0.7}>
-            <ThemedText
-              lightColor={filter === 'all' ? EarthColors.beigeBone : EarthColors.earthDark}
-              darkColor={filter === 'all' ? EarthColors.beigeBone : EarthColors.grayEarth}
-              style={styles.filterText}>
-              Todos
-            </ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterButton, filter === 'completed' && styles.filterButtonActive]}
-            onPress={() => setFilter('completed')}
-            activeOpacity={0.7}>
-            <ThemedText
-              lightColor={filter === 'completed' ? EarthColors.beigeBone : EarthColors.earthDark}
-              darkColor={filter === 'completed' ? EarthColors.beigeBone : EarthColors.grayEarth}
-              style={styles.filterText}>
-              Completados
-            </ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterButton, filter === 'cancelled' && styles.filterButtonActive]}
-            onPress={() => setFilter('cancelled')}
-            activeOpacity={0.7}>
-            <ThemedText
-              lightColor={filter === 'cancelled' ? EarthColors.beigeBone : EarthColors.earthDark}
-              darkColor={filter === 'cancelled' ? EarthColors.beigeBone : EarthColors.grayEarth}
-              style={styles.filterText}>
-              Cancelados
-            </ThemedText>
-          </TouchableOpacity>
-        </View>
 
         {/* Lista de Viajes */}
         <View style={styles.tripsList}>
-          {filteredTrips.map((trip) => (
-            <View key={trip.id} style={styles.tripCard}>
-              <View style={styles.tripHeader}>
-                <View style={styles.tripRouteContainer}>
-                  <MaterialIcons
-                    name="route"
-                    size={20}
-                    color={EarthColors.earthPrimary}
-                  />
-                  <ThemedText
-                    lightColor={EarthColors.earthDarker}
-                    darkColor={EarthColors.beigeLight}
-                    style={styles.tripRoute}>
-                    {trip.route}
-                  </ThemedText>
-                </View>
-                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(trip.status) + '20' }]}>
-                  <ThemedText
-                    lightColor={getStatusColor(trip.status)}
-                    darkColor={getStatusColor(trip.status)}
-                    style={styles.statusBadgeText}>
-                    {getStatusText(trip.status)}
-                  </ThemedText>
-                </View>
-              </View>
+          {trips.length > 0 ? (
+            trips.map((trip, index) => {
+              try {
+                const date = trip.scheduledDate;
+                const time = trip.frequency.departureTime;
+                const arrivalTime = trip.scheduledArrivalTime
+                  ? new Date(trip.scheduledArrivalTime).toLocaleTimeString('es-ES', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: true,
+                    })
+                  : 'N/A';
 
-              <View style={styles.tripDetails}>
-                <View style={styles.tripDetailRow}>
-                  <MaterialIcons
-                    name="calendar-today"
-                    size={16}
-                    color={EarthColors.earthDark}
-                  />
-                  <ThemedText
-                    lightColor={EarthColors.earthDark}
-                    darkColor={EarthColors.grayEarth}
-                    style={styles.tripDetailText}>
-                    {trip.date}
-                  </ThemedText>
-                </View>
-                <View style={styles.tripDetailRow}>
-                  <MaterialIcons
-                    name="schedule"
-                    size={16}
-                    color={EarthColors.earthDark}
-                  />
-                  <ThemedText
-                    lightColor={EarthColors.earthDark}
-                    darkColor={EarthColors.grayEarth}
-                    style={styles.tripDetailText}>
-                    {trip.departureTime} - {trip.arrivalTime}
-                  </ThemedText>
-                </View>
-                <View style={styles.tripDetailRow}>
-                  <MaterialIcons
-                    name="people"
-                    size={16}
-                    color={EarthColors.earthDark}
-                  />
-                  <ThemedText
-                    lightColor={EarthColors.earthDark}
-                    darkColor={EarthColors.grayEarth}
-                    style={styles.tripDetailText}>
-                    {trip.passengers} / {trip.totalSeats} pasajeros
-                  </ThemedText>
-                </View>
-                {trip.revenue && (
-                  <View style={styles.tripDetailRow}>
-                    <MaterialIcons
-                      name="attach-money"
-                      size={16}
-                      color={EarthColors.earthPrimary}
-                    />
-                    <ThemedText
-                      lightColor={EarthColors.earthPrimary}
-                      darkColor={EarthColors.earthLight}
-                      style={[styles.tripDetailText, styles.revenueText]}>
-                      ${trip.revenue} ingresos
-                    </ThemedText>
+                return (
+                  <View key={trip.id} style={styles.tripCard}>
+                  <View style={styles.tripHeader}>
+                    <View style={styles.tripRouteContainer}>
+                      <MaterialIcons
+                        name="route"
+                        size={20}
+                        color={EarthColors.earthPrimary}
+                      />
+                      <ThemedText
+                        lightColor={EarthColors.earthDarker}
+                        darkColor={EarthColors.beigeLight}
+                        style={styles.tripRoute}>
+                        {trip.frequency.route.origin} - {trip.frequency.route.destination}
+                      </ThemedText>
+                    </View>
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        { backgroundColor: getStatusColor(trip.status) + '20' },
+                      ]}>
+                      <ThemedText
+                        lightColor={getStatusColor(trip.status)}
+                        darkColor={getStatusColor(trip.status)}
+                        style={styles.statusBadgeText}>
+                        {getStatusText(trip.status)}
+                      </ThemedText>
+                    </View>
                   </View>
-                )}
-              </View>
+
+                  <View style={styles.tripDetails}>
+                    <View style={styles.tripDetailRow}>
+                      <MaterialIcons
+                        name="calendar-today"
+                        size={16}
+                        color={EarthColors.earthDark}
+                      />
+                      <ThemedText
+                        lightColor={EarthColors.earthDark}
+                        darkColor={EarthColors.grayEarth}
+                        style={styles.tripDetailText}>
+                        {date}
+                      </ThemedText>
+                    </View>
+                    <View style={styles.tripDetailRow}>
+                      <MaterialIcons name="schedule" size={16} color={EarthColors.earthDark} />
+                      <ThemedText
+                        lightColor={EarthColors.earthDark}
+                        darkColor={EarthColors.grayEarth}
+                        style={styles.tripDetailText}>
+                        {time} - {arrivalTime}
+                      </ThemedText>
+                    </View>
+                    <View style={styles.tripDetailRow}>
+                      <MaterialIcons name="directions-bus" size={16} color={EarthColors.earthDark} />
+                      <ThemedText
+                        lightColor={EarthColors.earthDark}
+                        darkColor={EarthColors.grayEarth}
+                        style={styles.tripDetailText}>
+                        Bus {trip.busPlate}
+                      </ThemedText>
+                    </View>
+                    <View style={styles.tripDetailRow}>
+                      <MaterialIcons name="people" size={16} color={EarthColors.earthDark} />
+                      <ThemedText
+                        lightColor={EarthColors.earthDark}
+                        darkColor={EarthColors.grayEarth}
+                        style={styles.tripDetailText}>
+                        {trip.ticketsCount || trip.occupiedSeats || 0} / {trip.busSeatsCount}{' '}
+                        pasajeros
+                      </ThemedText>
+                    </View>
+                  </View>
+                </View>
+                );
+              } catch (error) {
+                return null;
+              }
+            })
+          ) : (
+            <View style={styles.emptyContainer}>
+              <MaterialIcons name="event-busy" size={64} color={EarthColors.grayEarth} />
+              <ThemedText style={styles.emptyText}>No hay viajes en el historial</ThemedText>
             </View>
-          ))}
+          )}
         </View>
       </ScrollView>
     </ThemedView>
@@ -309,6 +322,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: EarthColors.grayLight || '#F5F5F5',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: EarthColors.earthDark,
   },
   scrollView: {
     flex: 1,
@@ -425,5 +448,17 @@ const styles = StyleSheet.create({
   },
   revenueText: {
     fontWeight: '600',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+    gap: 16,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: EarthColors.grayEarth,
+    textAlign: 'center',
   },
 });

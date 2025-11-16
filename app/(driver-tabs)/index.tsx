@@ -1,132 +1,402 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { DriverHeader } from '@/components/ui/driver-header';
+import { API_BASE_URL } from '@/constants/api';
 import { EarthColors } from '@/constants/theme';
+import { getJsonWithAuth, fetchWithAuth } from '@/services/api';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { router } from 'expo-router';
-import React from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-    ScrollView,
-    StyleSheet,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+  Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
+// Tipo de datos del viaje
+interface Trip {
+  id: string;
+  frequency: {
+    id: string;
+    route: {
+      origin: string;
+      destination: string;
+    };
+    departureTime: string;
+  };
+  busPlate: string;
+  busSeatsCount: number;
+  scheduledDate: string;
+  status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELED' | 'RESCHEDULED';
+  ticketsCount?: number;
+  occupiedSeats?: number;
+}
 
 export default function DriverHomeScreen() {
-  // Datos del viaje actual - en el futuro vendrán de la API
-  const currentTrip = {
-    route: 'Lima - Cusco',
-    busNumber: '23',
-    departureTime: '10:00 AM',
-    passengers: 35,
-    totalSeats: 40,
+  const [tripInProgress, setTripInProgress] = useState<Trip | null>(null);
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadTrips = async () => {
+    try {
+      const timestamp = new Date().getTime();
+
+      // Cargar viaje en curso
+      try {
+        const inProgressTrip = await getJsonWithAuth<Trip>(`${API_BASE_URL}/viajes/conductor/en-curso?t=${timestamp}`);
+        setTripInProgress(inProgressTrip);
+      } catch (error: any) {
+        // Si no hay viaje en curso (204 No Content), está bien
+        if (error?.response?.status !== 204) {
+          // Solo log si es un error real, no 204
+        }
+        setTripInProgress(null);
+      }
+
+      // Cargar viajes programados (SCHEDULED)
+      const data = await getJsonWithAuth<Trip[]>(`${API_BASE_URL}/viajes/conductor?t=${timestamp}`);
+
+      const sortedTrips = data.sort((a, b) => {
+        const dateA = new Date(a.scheduledDate + 'T' + a.frequency.departureTime);
+        const dateB = new Date(b.scheduledDate + 'T' + b.frequency.departureTime);
+        return dateA.getTime() - dateB.getTime();
+      });
+
+      setTrips(sortedTrips);
+    } catch (error) {
+      Alert.alert('Error', 'No se pudieron cargar los viajes asignados');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
-  const handleScanTickets = () => {
-    router.push('/scan-ticket');
+  useEffect(() => {
+    loadTrips();
+  }, []);
+
+  // Recargar cuando la pantalla vuelve a estar en foco
+  useFocusEffect(
+    useCallback(() => {
+      loadTrips();
+    }, [])
+  );
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadTrips();
+  }, []);
+
+  const handleScanTickets = (tripId: string) => {
+    router.push(`/scan-ticket?tripId=${tripId}`);
   };
+
+  const handleStartTrip = async (tripId: string) => {
+    try {
+      const response = await fetchWithAuth(`${API_BASE_URL}/viajes/${tripId}/estado?estado=IN_PROGRESS`, {
+        method: 'PATCH',
+      });
+
+      if (response.ok) {
+        Alert.alert('Viaje Iniciado', 'El viaje ha comenzado correctamente');
+        loadTrips();
+      } else {
+        const errorText = await response.text();
+        Alert.alert('Error', errorText || 'No se pudo iniciar el viaje');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'No se pudo iniciar el viaje');
+    }
+  };
+
+  const handleFinishTrip = async (tripId: string) => {
+    Alert.alert(
+      'Finalizar Viaje',
+      '¿Estás seguro de que deseas finalizar este viaje?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Finalizar',
+          onPress: async () => {
+            try {
+              const response = await fetchWithAuth(`${API_BASE_URL}/viajes/${tripId}/estado?estado=COMPLETED`, {
+                method: 'PATCH',
+              });
+
+              if (response.ok) {
+                Alert.alert('Viaje Finalizado', 'El viaje ha sido completado');
+                loadTrips();
+              } else {
+                Alert.alert('Error', 'No se pudo finalizar el viaje');
+              }
+            } catch (error) {
+              Alert.alert('Error', 'No se pudo finalizar el viaje');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // El viaje principal es el que está en curso, o el próximo si no hay ninguno en curso
+  const mainTrip = useMemo(() => tripInProgress || trips[0], [tripInProgress, trips]);
+  const upcomingTrips = useMemo(() => {
+    // Si hay viaje en curso, mostrar todos los SCHEDULED
+    // Si no hay viaje en curso, mostrar todos menos el primero
+    return tripInProgress ? trips : trips.slice(1);
+  }, [tripInProgress, trips]);
+
+  if (loading) {
+    return (
+      <ThemedView style={styles.container}>
+        <DriverHeader />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={EarthColors.earthDark} />
+          <ThemedText style={styles.loadingText}>Cargando viajes...</ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
 
   return (
     <ThemedView style={styles.container}>
-      {/* Header Reutilizable */}
       <DriverHeader />
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
-        
-        {/* Sección Viaje Actual */}
-        <View style={styles.section}>
-          <ThemedText
-            lightColor={EarthColors.earthDarker}
-            darkColor={EarthColors.beigeLight}
-            style={styles.sectionTitle}>
-            Viaje Actual
-          </ThemedText>
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={EarthColors.earthDark}
+          />
+        }>
 
-          <View style={styles.tripCard}>
-            <View style={styles.tripRow}>
-              <View style={styles.tripItem}>
-                <ThemedText
-                  lightColor={EarthColors.earthDark}
-                  darkColor={EarthColors.grayEarth}
-                  style={styles.tripLabel}>
-                  Ruta
-                </ThemedText>
-                <ThemedText
-                  lightColor={EarthColors.earthDarker}
-                  darkColor={EarthColors.beigeLight}
-                  style={styles.tripValue}>
-                  {currentTrip.route}
-                </ThemedText>
-              </View>
-              <View style={styles.tripItem}>
-                <ThemedText
-                  lightColor={EarthColors.earthDark}
-                  darkColor={EarthColors.grayEarth}
-                  style={styles.tripLabel}>
-                  Bus
-                </ThemedText>
-                <ThemedText
-                  lightColor={EarthColors.earthDarker}
-                  darkColor={EarthColors.beigeLight}
-                  style={styles.tripValue}>
-                  #{currentTrip.busNumber}
-                </ThemedText>
-              </View>
+        {/* Viaje Principal - EN CURSO o PRÓXIMO */}
+        {mainTrip ? (
+          <View style={styles.section} key={`main-trip-${mainTrip.id}`}>
+            <View style={[styles.nextTripBadge, tripInProgress && styles.inProgressBadge]}>
+              <MaterialIcons
+                name={tripInProgress ? "directions-bus" : "schedule"}
+                size={16}
+                color={EarthColors.whiteBone}
+              />
+              <ThemedText
+                lightColor={EarthColors.whiteBone}
+                darkColor={EarthColors.whiteBone}
+                style={styles.nextTripBadgeText}>
+                {tripInProgress ? 'VIAJE EN CURSO' : 'PRÓXIMO VIAJE'}
+              </ThemedText>
             </View>
 
-            <View style={[styles.tripRow, styles.tripRowLast]}>
-              <View style={styles.tripItem}>
-                <ThemedText
-                  lightColor={EarthColors.earthDark}
-                  darkColor={EarthColors.grayEarth}
-                  style={styles.tripLabel}>
-                  Hora de Salida
-                </ThemedText>
-                <ThemedText
-                  lightColor={EarthColors.earthDarker}
-                  darkColor={EarthColors.beigeLight}
-                  style={styles.tripValue}>
-                  {currentTrip.departureTime}
-                </ThemedText>
+            <View style={styles.nextTripCard} key={`card-${mainTrip.id}-${mainTrip.scheduledDate}`}>
+              {/* Encabezado con ruta */}
+              <View style={styles.routeHeader}>
+                <View style={styles.routeContainer}>
+                  <View style={styles.locationPoint} />
+                  <ThemedText
+                    lightColor={EarthColors.earthDarker}
+                    darkColor={EarthColors.beigeLight}
+                    style={styles.locationText}>
+                    {mainTrip.frequency.route.origin}
+                  </ThemedText>
+                </View>
+                <MaterialIcons
+                  name="arrow-forward"
+                  size={24}
+                  color={EarthColors.earthDark}
+                />
+                <View style={styles.routeContainer}>
+                  <View style={[styles.locationPoint, styles.locationPointDestination]} />
+                  <ThemedText
+                    lightColor={EarthColors.earthDarker}
+                    darkColor={EarthColors.beigeLight}
+                    style={styles.locationText}>
+                    {mainTrip.frequency.route.destination}
+                  </ThemedText>
+                </View>
               </View>
-              <View style={styles.tripItem}>
-                <ThemedText
-                  lightColor={EarthColors.earthDark}
-                  darkColor={EarthColors.grayEarth}
-                  style={styles.tripLabel}>
-                  Pasajeros
-                </ThemedText>
-                <ThemedText
-                  lightColor={EarthColors.earthDarker}
-                  darkColor={EarthColors.beigeLight}
-                  style={styles.tripValue}>
-                  {currentTrip.passengers} / {currentTrip.totalSeats}
-                </ThemedText>
+
+              {/* Información del viaje */}
+              <View style={styles.tripInfoGrid}>
+                <View style={styles.infoBox}>
+                  <MaterialIcons name="event" size={20} color={EarthColors.earthDark} />
+                  <View style={styles.infoTextContainer}>
+                    <ThemedText style={styles.infoLabel}>Fecha</ThemedText>
+                    <ThemedText style={styles.infoValue}>
+                      {mainTrip.scheduledDate}
+                    </ThemedText>
+                  </View>
+                </View>
+
+                <View style={styles.infoBox}>
+                  <MaterialIcons name="access-time" size={20} color={EarthColors.earthDark} />
+                  <View style={styles.infoTextContainer}>
+                    <ThemedText style={styles.infoLabel}>Hora</ThemedText>
+                    <ThemedText style={styles.infoValue}>
+                      {mainTrip.frequency.departureTime}
+                    </ThemedText>
+                  </View>
+                </View>
+
+                <View style={styles.infoBox}>
+                  <MaterialIcons name="directions-bus" size={20} color={EarthColors.earthDark} />
+                  <View style={styles.infoTextContainer}>
+                    <ThemedText style={styles.infoLabel}>Bus</ThemedText>
+                    <ThemedText style={styles.infoValue}>{mainTrip.busPlate}</ThemedText>
+                  </View>
+                </View>
+
+                <View style={styles.infoBox}>
+                  <MaterialIcons name="people" size={20} color={EarthColors.earthDark} />
+                  <View style={styles.infoTextContainer}>
+                    <ThemedText style={styles.infoLabel}>Pasajeros</ThemedText>
+                    <ThemedText style={styles.infoValue}>
+                      {mainTrip.ticketsCount || 0} / {mainTrip.busSeatsCount}
+                    </ThemedText>
+                  </View>
+                </View>
               </View>
+
+              {/* Botones según el estado del viaje */}
+              {tripInProgress ? (
+                <View style={styles.buttonRow}>
+                  {/* Botón de escanear */}
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.scanButtonFlex]}
+                    onPress={() => handleScanTickets(mainTrip.id)}
+                    activeOpacity={0.8}>
+                    <MaterialIcons
+                      name="qr-code-scanner"
+                      size={24}
+                      color={EarthColors.beigeBone}
+                    />
+                    <ThemedText style={styles.actionButtonText}>
+                      Escanear
+                    </ThemedText>
+                  </TouchableOpacity>
+
+                  {/* Botón de finalizar viaje */}
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.finishButton]}
+                    onPress={() => handleFinishTrip(mainTrip.id)}
+                    activeOpacity={0.8}>
+                    <MaterialIcons
+                      name="check-circle"
+                      size={24}
+                      color={EarthColors.whiteBone}
+                    />
+                    <ThemedText style={styles.actionButtonText}>
+                      Finalizar
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.buttonRow}>
+                  {/* Botón de iniciar viaje */}
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.startButton]}
+                    onPress={() => handleStartTrip(mainTrip.id)}
+                    activeOpacity={0.8}>
+                    <MaterialIcons
+                      name="play-arrow"
+                      size={24}
+                      color={EarthColors.whiteBone}
+                    />
+                    <ThemedText style={styles.actionButtonText}>
+                      Iniciar Viaje
+                    </ThemedText>
+                  </TouchableOpacity>
+
+                  {/* Botón de escanear (deshabilitado hasta que inicie) */}
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.scanButtonDisabled]}
+                    disabled
+                    activeOpacity={0.8}>
+                    <MaterialIcons
+                      name="qr-code-scanner"
+                      size={24}
+                      color={EarthColors.grayEarth}
+                    />
+                    <ThemedText style={styles.actionButtonTextDisabled}>
+                      Escanear
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           </View>
-        </View>
+        ) : (
+          <View style={styles.emptyContainer}>
+            <MaterialIcons name="event-busy" size={64} color={EarthColors.grayEarth} />
+            <ThemedText style={styles.emptyText}>
+              No tienes viajes programados
+            </ThemedText>
+          </View>
+        )}
 
-        {/* Botón Escanear Boletos */}
-        <TouchableOpacity
-          style={styles.scanButton}
-          onPress={handleScanTickets}
-          activeOpacity={0.8}>
-          <MaterialIcons
-            name="qr-code-scanner"
-            size={24}
-            color={EarthColors.beigeBone}
-          />
-          <ThemedText
-            lightColor={EarthColors.beigeBone}
-            darkColor={EarthColors.beigeBone}
-            style={styles.scanButtonText}>
-            Escanear Boletos
-          </ThemedText>
-        </TouchableOpacity>
+        {/* Lista de Próximos Viajes */}
+        {upcomingTrips.length > 0 && (
+          <View style={styles.section}>
+            <ThemedText style={styles.sectionTitle}>Próximos Viajes</ThemedText>
+
+            {upcomingTrips.map((trip) => {
+              return (
+                <View key={trip.id} style={styles.upcomingTripCard}>
+                  <View style={styles.upcomingTripHeader}>
+                    <View style={styles.upcomingRoute}>
+                      <ThemedText style={styles.upcomingOrigin}>
+                        {trip.frequency.route.origin}
+                      </ThemedText>
+                      <MaterialIcons
+                        name="arrow-forward"
+                        size={16}
+                        color={EarthColors.earthDark}
+                      />
+                      <ThemedText style={styles.upcomingDestination}>
+                        {trip.frequency.route.destination}
+                      </ThemedText>
+                    </View>
+                  </View>
+
+                  <View style={styles.upcomingTripInfo}>
+                    <View style={styles.upcomingInfoItem}>
+                      <MaterialIcons name="event" size={16} color={EarthColors.earthDark} />
+                      <ThemedText style={styles.upcomingInfoText}>
+                        {trip.scheduledDate}
+                      </ThemedText>
+                    </View>
+                    <View style={styles.upcomingInfoItem}>
+                      <MaterialIcons name="access-time" size={16} color={EarthColors.earthDark} />
+                      <ThemedText style={styles.upcomingInfoText}>
+                        {trip.frequency.departureTime}
+                      </ThemedText>
+                    </View>
+                    <View style={styles.upcomingInfoItem}>
+                      <MaterialIcons name="directions-bus" size={16} color={EarthColors.earthDark} />
+                      <ThemedText style={styles.upcomingInfoText}>{trip.busPlate}</ThemedText>
+                    </View>
+                    <View style={styles.upcomingInfoItem}>
+                      <MaterialIcons name="people" size={16} color={EarthColors.earthDark} />
+                      <ThemedText style={styles.upcomingInfoText}>
+                        {trip.ticketsCount || 0}/{trip.busSeatsCount}
+                      </ThemedText>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
     </ThemedView>
   );
@@ -144,6 +414,52 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 100,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: EarthColors.earthDark,
+  },
+  // Filtros
+  filterContainer: {
+    backgroundColor: EarthColors.whiteBone,
+    borderBottomWidth: 1,
+    borderBottomColor: EarthColors.grayEarth + '30',
+    paddingVertical: 12,
+  },
+  filterScroll: {
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  filterButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: EarthColors.grayLight,
+    borderWidth: 1,
+    borderColor: EarthColors.grayEarth + '40',
+  },
+  calendarButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  filterButtonActive: {
+    backgroundColor: EarthColors.earthDark,
+    borderColor: EarthColors.earthDark,
+  },
+  filterText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: EarthColors.earthDark,
+  },
+  filterTextActive: {
+    color: EarthColors.whiteBone,
+  },
   section: {
     marginBottom: 24,
   },
@@ -151,38 +467,102 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     marginBottom: 16,
+    color: EarthColors.earthDarker,
   },
-  tripCard: {
+  // Badge "PRÓXIMO VIAJE"
+  nextTripBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#D97706', // Ámbar oscuro
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 6,
+    marginBottom: 12,
+  },
+  nextTripBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  inProgressBadge: {
+    backgroundColor: '#10B981', // Verde para viaje en curso
+  },
+  // Tarjeta del viaje próximo - DESTACADA
+  nextTripCard: {
     backgroundColor: EarthColors.whiteBone,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
-    shadowColor: EarthColors.blackSoft,
+    borderWidth: 3,
+    borderColor: '#FBBF24', // Ámbar
+    shadowColor: '#D97706',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 6,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  tripRow: {
+  routeHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: EarthColors.grayEarth + '30',
   },
-  tripRowLast: {
-    marginBottom: 0,
-  },
-  tripItem: {
+  routeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     flex: 1,
   },
-  tripLabel: {
-    fontSize: 14,
-    marginBottom: 6,
+  locationPoint: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#10B981', // Verde
   },
-  tripValue: {
-    fontSize: 18,
+  locationPointDestination: {
+    backgroundColor: '#EF4444', // Rojo
+  },
+  locationText: {
+    fontSize: 16,
     fontWeight: '700',
+    flex: 1,
+  },
+  tripInfoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 20,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: EarthColors.beigeLight + '40',
+    borderRadius: 12,
+    padding: 12,
+    gap: 10,
+    width: '48%',
+  },
+  infoTextContainer: {
+    flex: 1,
+  },
+  infoLabel: {
+    fontSize: 11,
+    color: EarthColors.earthDark,
+    marginBottom: 2,
+    textTransform: 'uppercase',
+    fontWeight: '600',
+  },
+  infoValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: EarthColors.earthDarker,
   },
   scanButton: {
     backgroundColor: EarthColors.blackSoft,
@@ -192,19 +572,135 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    alignSelf: 'center',
     gap: 12,
     shadowColor: EarthColors.blackSoft,
     shadowOffset: {
       width: 0,
       height: 4,
     },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 5,
   },
   scanButtonText: {
     fontSize: 18,
     fontWeight: '700',
+    color: EarthColors.beigeBone,
+  },
+  // Tarjetas de próximos viajes (lista)
+  upcomingTripCard: {
+    backgroundColor: EarthColors.whiteBone,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: EarthColors.grayEarth + '40',
+    shadowColor: EarthColors.blackSoft,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  upcomingTripHeader: {
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: EarthColors.grayEarth + '30',
+  },
+  upcomingRoute: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  upcomingOrigin: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: EarthColors.earthDarker,
+  },
+  upcomingDestination: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: EarthColors.earthDarker,
+  },
+  upcomingTripInfo: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  upcomingInfoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: EarthColors.beigeLight + '30',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  upcomingInfoText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: EarthColors.earthDark,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+    gap: 16,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: EarthColors.grayEarth,
+    textAlign: 'center',
+  },
+  // Botones de acción
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  actionButton: {
+    flex: 1,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    shadowColor: EarthColors.blackSoft,
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  scanButtonFlex: {
+    backgroundColor: EarthColors.blackSoft,
+  },
+  startButton: {
+    backgroundColor: '#10B981', // Verde para iniciar
+  },
+  finishButton: {
+    backgroundColor: '#EF4444', // Rojo para finalizar
+  },
+  scanButtonDisabled: {
+    backgroundColor: EarthColors.grayEarth + '40',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  actionButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: EarthColors.beigeBone,
+  },
+  actionButtonTextDisabled: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: EarthColors.grayEarth,
   },
 });
