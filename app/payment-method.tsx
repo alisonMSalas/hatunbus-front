@@ -178,82 +178,78 @@ export default function PaymentMethodScreen() {
       });
 
       if (response.approvalUrl) {
-        // Abrir PayPal en el navegador (no esperamos el resultado)
-        WebBrowser.openBrowserAsync(response.approvalUrl);
+        // Abrir PayPal en el navegador con listener para detectar cierre
+        const result = await WebBrowser.openBrowserAsync(response.approvalUrl);
 
-        // Mostrar indicador de espera
+        // El navegador se cerró, verificar si el pago se completó
         setWaitingForPayment(true);
-        Alert.alert(
-          'Esperando pago',
-          'Completa el pago en PayPal. El sistema detectará automáticamente cuando finalices.',
-          [{ text: 'Entendido' }]
-        );
+        setIsLoading(true);
 
-        // Iniciar monitoreo del estado del pago cada 3 segundos
-        const maxAttempts = 60; // 3 minutos máximo (60 * 3 segundos)
-        let attempts = 0;
-        let paymentCompleted = false;
+        // Esperar 2 segundos para que el webhook de PayPal llegue al backend
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
-        const checkInterval = setInterval(async () => {
-          attempts++;
+        // Verificar una vez si el pago se completó
+        const completed = await checkPaymentStatus(response.orderId);
 
-          // Verificar si el pago se completó
-          const completed = await checkPaymentStatus(response.orderId);
+        setIsLoading(false);
+        setWaitingForPayment(false);
 
-          if (completed) {
-            paymentCompleted = true;
-            clearInterval(checkInterval);
-            setIsLoading(false);
-            setWaitingForPayment(false);
-
-            // Mostrar mensaje de éxito
-            Alert.alert('¡Pago exitoso!', 'Tu pago ha sido procesado. Redirigiendo a tus tickets...');
-
-            // Redirigir a tickets
-            setTimeout(() => {
-              router.replace('/(tabs)/tickets');
-            }, 1500);
-          } else if (attempts >= maxAttempts) {
-            // Timeout: preguntar manualmente
-            clearInterval(checkInterval);
-            setIsLoading(false);
-            setWaitingForPayment(false);
-
-            Alert.alert(
-              'Verificar pago',
-              '¿Completaste el pago en PayPal? No pudimos detectarlo automáticamente.',
-              [
-                {
-                  text: 'No',
-                  onPress: () => {
-                    Alert.alert('Pago cancelado', 'Puedes intentar nuevamente cuando estés listo.');
-                  },
-                  style: 'cancel',
+        if (completed) {
+          // Pago exitoso
+          Alert.alert(
+            '¡Pago exitoso!',
+            'Tu pago ha sido procesado correctamente.',
+            [
+              {
+                text: 'Ver mis tickets',
+                onPress: () => router.replace('/(tabs)/tickets')
+              }
+            ]
+          );
+        } else {
+          // Preguntar al usuario
+          Alert.alert(
+            'Verificar pago',
+            '¿Completaste el pago en PayPal?',
+            [
+              {
+                text: 'No',
+                onPress: () => {
+                  Alert.alert('Pago cancelado', 'Puedes intentar nuevamente cuando estés listo.');
                 },
-                {
-                  text: 'Sí, lo completé',
-                  onPress: async () => {
-                    // Intentar capturar una vez más
-                    try {
-                      await postJsonWithAuth(`${API_BASE_URL}/payments/paypal/capture`, {
-                        paypalOrderId: response.orderId,
-                        buyerUserId: user?.id,
-                        tickets: ticketsData,
-                      });
+                style: 'cancel',
+              },
+              {
+                text: 'Sí, lo completé',
+                onPress: async () => {
+                  setIsLoading(true);
+                  try {
+                    await postJsonWithAuth(`${API_BASE_URL}/payments/paypal/capture`, {
+                      paypalOrderId: response.orderId,
+                      buyerUserId: user?.id,
+                      tickets: ticketsData,
+                    });
 
-                      Alert.alert('Pago procesado', 'Tu pago ha sido confirmado.');
-                      setTimeout(() => {
-                        router.replace('/(tabs)/tickets');
-                      }, 1500);
-                    } catch (error: any) {
-                      Alert.alert('Error', 'No se pudo completar el pago. Contacta con soporte.');
-                    }
-                  },
+                    Alert.alert(
+                      'Pago confirmado',
+                      'Tu compra se ha procesado exitosamente.',
+                      [
+                        {
+                          text: 'Ver tickets',
+                          onPress: () => router.replace('/(tabs)/tickets')
+                        }
+                      ]
+                    );
+                  } catch (error: any) {
+                    Alert.alert('Error', 'No se pudo verificar el pago. Por favor contacta con soporte.');
+                  } finally {
+                    setIsLoading(false);
+                  }
                 },
-              ]
-            );
-          }
-        }, 3000); // Verificar cada 3 segundos
+              }
+            ]
+          );
+        }
       } else {
         throw new Error('No se recibió URL de aprobación de PayPal');
       }

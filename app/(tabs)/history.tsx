@@ -2,8 +2,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Header } from '@/components/ui/header';
 import { EarthColors } from '@/constants/theme';
-import { router, useRouter } from 'expo-router';
-import React, { useState, useEffect } from 'react';
+import { router, useRouter, useFocusEffect } from 'expo-router';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getJsonWithAuth } from '@/services/api';
 import { API_BASE_URL } from '@/constants/api';
@@ -69,6 +69,15 @@ export default function HistoryScreen() {
     
     loadPastPurchases();
   }, [user, authLoading]);
+
+  // Recargar datos cuando la pestaña recibe foco
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.id && !authLoading) {
+        loadPastPurchases();
+      }
+    }, [user, authLoading])
+  );
 
   const loadPastPurchases = async () => {
     if (!user?.id) {

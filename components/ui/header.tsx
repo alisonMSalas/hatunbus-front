@@ -39,7 +39,7 @@ export function Header({ title, showBackButton = true, onBackPress }: HeaderProp
           style: 'destructive',
           onPress: async () => {
             await logout();
-            router.replace('/');
+            router.replace('/login');
           },
         },
       ]

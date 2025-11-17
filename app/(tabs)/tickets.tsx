@@ -3,8 +3,8 @@ import { ThemedView } from '@/components/themed-view';
 import { Header } from '@/components/ui/header';
 import { EarthColors } from '@/constants/theme';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { router, useRouter } from 'expo-router';
-import React, { useState, useEffect } from 'react';
+import { router, useRouter, useFocusEffect } from 'expo-router';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getJsonWithAuth } from '@/services/api';
 import { API_BASE_URL } from '@/constants/api';
@@ -69,6 +69,15 @@ export default function TicketsScreen() {
     loadPurchases();
   }, [user, authLoading]);
 
+  // Recargar datos cuando la pestaña recibe foco
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.id && !authLoading) {
+        loadPurchases();
+      }
+    }, [user, authLoading])
+  );
+
   const loadPurchases = async () => {
     if (!user?.id) {
       setLoading(false);
@@ -111,10 +120,11 @@ export default function TicketsScreen() {
               return; // Saltar tickets cancelados, expirados o pendientes de pago
             }
             
-            // Filtrar por status del viaje - NO mostrar viajes completados o cancelados
+            // Filtrar por status del viaje - SOLO excluir viajes completados o cancelados
+            // Mantener IN_PROGRESS porque el pasajero necesita ver sus boletos durante el viaje
             if (ticket.tripStatus === 'COMPLETED' || ticket.tripStatus === 'CANCELED') {
               console.log('Ticket filtrado por tripStatus:', ticket.tripStatus);
-              return; // Este ticket ya debe estar en el historial
+              return; // Este ticket debe estar en el historial
             }
 
             const tripDate = new Date(ticket.scheduledDepartureTime || ticket.trip?.scheduledDepartureTime || ticket.trip?.date);
