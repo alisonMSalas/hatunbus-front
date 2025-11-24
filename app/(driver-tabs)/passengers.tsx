@@ -16,6 +16,16 @@ import {
     View,
 } from 'react-native';
 
+// Helper para convertir array de fecha/hora a Date
+const arrayToDate = (dateArray: any): Date => {
+  if (Array.isArray(dateArray)) {
+    // Formato: [year, month, day, hour, minute] o [year, month, day, hour, minute, second, nanosecond]
+    const [year, month, day, hour = 0, minute = 0] = dateArray;
+    return new Date(year, month - 1, day, hour, minute);
+  }
+  return new Date(dateArray);
+};
+
 interface Ticket {
   id: string;
   passengerName: string;
@@ -180,13 +190,13 @@ export default function DriverPassengersScreen() {
                 lightColor={EarthColors.earthDarker}
                 darkColor={EarthColors.beigeLight}
                 style={styles.tripRoute}>
-                {trip.frequency.route.origin} → {trip.frequency.route.destination}
+                {trip.routeOrigin || trip.frequencySegment?.routeOrigin} → {trip.routeDestination || trip.frequencySegment?.routeDestination}
               </ThemedText>
               <ThemedText
                 lightColor={EarthColors.earthDark}
                 darkColor={EarthColors.grayEarth}
                 style={styles.tripTime}>
-                {new Date(trip.scheduledDepartureTime).toLocaleString('es-ES', {
+                {arrayToDate(trip.scheduledDepartureTime).toLocaleString('es-ES', {
                   hour: '2-digit',
                   minute: '2-digit',
                   day: '2-digit',
@@ -235,13 +245,13 @@ export default function DriverPassengersScreen() {
               lightColor={EarthColors.earthDarker}
               darkColor={EarthColors.beigeLight}
               style={styles.tripRoute}>
-              {trip.frequency.route.origin} → {trip.frequency.route.destination}
+              {trip.routeOrigin || trip.frequencySegment?.routeOrigin} → {trip.routeDestination || trip.frequencySegment?.routeDestination}
             </ThemedText>
             <ThemedText
               lightColor={EarthColors.earthDark}
               darkColor={EarthColors.grayEarth}
               style={styles.tripTime}>
-              {new Date(trip.scheduledDepartureTime).toLocaleString('es-ES', {
+              {arrayToDate(trip.scheduledDepartureTime).toLocaleString('es-ES', {
                 hour: '2-digit',
                 minute: '2-digit',
                 day: '2-digit',

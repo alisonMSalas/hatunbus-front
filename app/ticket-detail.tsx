@@ -12,6 +12,16 @@ import {
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
+// Helper para convertir array de fecha/hora a Date
+const arrayToDate = (dateArray: any): Date => {
+  if (!dateArray) return new Date();
+  if (Array.isArray(dateArray)) {
+    const [year, month, day, hour = 0, minute = 0] = dateArray;
+    return new Date(year, month - 1, day, hour, minute);
+  }
+  return new Date(dateArray);
+};
+
 export default function TicketDetailScreen() {
   const params = useLocalSearchParams();
 
@@ -33,9 +43,9 @@ export default function TicketDetailScreen() {
     ticketId: Array.isArray(params.ticketId) ? params.ticketId[0] : params.ticketId || 'TKT-123456',
   };
 
-  const formatUsageDate = (dateStr?: string) => {
+  const formatUsageDate = (dateStr?: any) => {
     if (!dateStr) return '';
-    const date = new Date(dateStr);
+    const date = arrayToDate(dateStr);
     return date.toLocaleDateString('es-ES', {
       year: 'numeric',
       month: 'long',

@@ -100,11 +100,18 @@ export default function PaymentMethodScreen() {
           return;
         }
 
+        console.log('📝 Iniciando proceso de compra con transferencia...');
+        console.log('Tickets data:', ticketsData);
+        console.log('User ID:', user.id);
+
         const base64 = await FileSystem.readAsStringAsync(uploadedImage, {
           encoding: 'base64' as any,
         });
 
+        console.log('✅ Imagen convertida a base64');
+
         // SEGUNDO: Crear la compra
+        console.log('📤 Enviando compra al backend...');
         const purchaseData = await postJsonWithAuth(`${API_BASE_URL}/compras`, {
           buyerUserId: user.id,
           purchaseType: 'ONLINE',
@@ -112,13 +119,17 @@ export default function PaymentMethodScreen() {
           tickets: ticketsData,
         });
 
+        console.log('✅ Compra creada:', purchaseData);
         const purchaseId = purchaseData.id;
 
         // TERCERO: Subir el comprobante
+        console.log('📤 Subiendo comprobante...');
         await postJsonWithAuth(`${API_BASE_URL}/payments/upload-receipt`, {
           purchaseId,
           receiptImageBase64: base64,
         });
+
+        console.log('✅ Comprobante subido exitosamente');
 
         // Mostrar mensaje de éxito para transferencia
         Alert.alert(
@@ -136,6 +147,8 @@ export default function PaymentMethodScreen() {
         await initiatePayPalPayment();
       }
     } catch (error: any) {
+      console.error('❌ Error en handleContinue:', error);
+      console.error('Error completo:', JSON.stringify(error, null, 2));
       Alert.alert('Error', error.message || 'No se pudo procesar el pago');
     } finally {
       setIsLoading(false);

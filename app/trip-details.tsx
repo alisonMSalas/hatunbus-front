@@ -4,6 +4,7 @@ import { Header } from '@/components/ui/header';
 import { EarthColors } from '@/constants/theme';
 import { API_BASE_URL } from '@/constants/api';
 import { getJsonWithAuth } from '@/services/api';
+import { TripDto } from '@/types/trip';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState, useEffect } from 'react';
@@ -15,6 +16,17 @@ import {
     View,
     ActivityIndicator,
 } from 'react-native';
+
+// Helper para convertir array de fecha/hora a Date
+const arrayToDate = (dateArray: any): Date => {
+  if (!dateArray) return new Date();
+  if (Array.isArray(dateArray)) {
+    // Formato: [year, month, day, hour, minute] o [year, month, day, hour, minute, second, nanosecond]
+    const [year, month, day, hour = 0, minute = 0] = dateArray;
+    return new Date(year, month - 1, day, hour, minute);
+  }
+  return new Date(dateArray);
+};
 
 interface TripDetails {
   id: string;
@@ -49,38 +61,39 @@ export default function TripDetailsScreen() {
   const loadTripDetails = async () => {
     try {
       setLoading(true);
-      const data = await getJsonWithAuth(`${API_BASE_URL}/viajes/${tripId}`);
+      const data: TripDto = await getJsonWithAuth(`${API_BASE_URL}/viajes/${tripId}`);
 
       const formattedTrip: TripDetails = {
         id: data.id,
         cooperative: data.frequency?.cooperativeName || 'Cooperativa',
-        busUnitNumber: data.busUnitNumber ? `Bus #${data.busUnitNumber}` : data.busPlate,
+        busUnitNumber: data.busUnitNumber ? `Bus #${data.busUnitNumber}` : data.busPlate || 'N/A',
         busPlate: data.busPlate || 'N/A',
         busChassisBrand: data.busChassisBrand || 'N/A',
         busBodyBrand: data.busBodyBrand || 'N/A',
         busSeatsCount: data.busSeatsCount || 0,
         busPhotoUrl: data.busPhotoUrl,
-        driverName: data.driverName || 'N/A',
+        driverName: data.driverName || data.mainDriverName || 'N/A',
         departureTime: formatTime(data.scheduledDepartureTime),
         arrivalTime: formatTime(data.scheduledArrivalTime),
         routeName: data.routeName || '',
-        routeOrigin: data.routeOrigin || '',
-        routeDestination: data.routeDestination || '',
+        routeOrigin: data.routeOrigin || data.frequencySegment?.routeOrigin || '',
+        routeDestination: data.routeDestination || data.frequencySegment?.routeDestination || '',
         availableSeats: data.availableSeats || 0,
         occupiedSeats: data.occupiedSeats || 0,
       };
 
       setTripData(formattedTrip);
     } catch (error) {
+      console.error('Error al cargar detalles del viaje:', error);
       alert('Error al cargar los detalles del viaje');
     } finally {
       setLoading(false);
     }
   };
 
-  const formatTime = (datetime: string) => {
+  const formatTime = (datetime: any) => {
     if (!datetime) return '--:--';
-    const date = new Date(datetime);
+    const date = arrayToDate(datetime);
     return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   };
 

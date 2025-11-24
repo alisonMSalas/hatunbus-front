@@ -4,6 +4,7 @@ import { Header } from '@/components/ui/header';
 import { API_BASE_URL } from '@/constants/api';
 import { EarthColors } from '@/constants/theme';
 import { getJsonWithAuth } from '@/services/api';
+import { SeatAvailabilityDto } from '@/types/trip';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -21,12 +22,14 @@ interface Seat {
   number: string; // V1, P1, V2, P2, etc.
   status: SeatStatus;
   passengerInitials?: string;
+  tripSeatId?: string; // ID del TripSeat en el backend
 }
 
 interface PassengerSeat {
   passengerIndex: number;
   passengerName: string;
   seatNumber: string | null; // V1, P1, V2, P2, etc.
+  tripSeatId?: string | null; // ID del TripSeat
 }
 
 interface PassengerInfo {
@@ -81,17 +84,24 @@ export default function SelectSeatsScreen() {
     try {
       setLoading(true);
 
-      const data = await getJsonWithAuth(`${API_BASE_URL}/viajes/${tripId}/asientos-disponibles`);
+      const data: SeatAvailabilityDto[] = await getJsonWithAuth(`${API_BASE_URL}/viajes/${tripId}/asientos-disponibles`);
 
       // Mapear asientos del backend (nuevo formato lógico)
-      const mappedSeats: Seat[] = data.map((seat: any, index: number) => {
-        const seatStatus: SeatStatus = seat.status === 'available' ? 'available' : 'others';
+      const mappedSeats: Seat[] = data.map((seat: SeatAvailabilityDto) => {
+        let seatStatus: SeatStatus = 'available';
+        
+        if (seat.status === 'occupied' || seat.status === 'reserved') {
+          seatStatus = 'others';
+        } else if (seat.status === 'available') {
+          seatStatus = 'available';
+        }
 
         return {
           id: seat.seatNumber, // Usamos seatNumber como ID (V1, P1, etc.)
           number: seat.seatNumber, // V1, P1, V2, P2, etc.
           status: seatStatus,
           passengerInitials: undefined,
+          tripSeatId: seat.tripSeatId, // Guardamos el ID del TripSeat si existe
         };
       });
 
@@ -102,10 +112,12 @@ export default function SelectSeatsScreen() {
         passengerIndex: index,
         passengerName: passenger.fullName,
         seatNumber: null,
+        tripSeatId: null,
       }));
 
       setPassengerSeats(initialPassengerSeats);
     } catch (error) {
+      console.error('Error al cargar asientos:', error);
       alert('Error al cargar los asientos del viaje');
     } finally {
       setLoading(false);

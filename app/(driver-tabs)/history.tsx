@@ -218,7 +218,7 @@ export default function DriverHistoryScreen() {
             trips.map((trip, index) => {
               try {
                 const date = trip.scheduledDate;
-                const time = trip.frequency.departureTime;
+                const time = trip.frequencySegment?.departureTime || trip.frequency?.departureTime || '00:00:00';
                 const arrivalTime = trip.scheduledArrivalTime
                   ? new Date(trip.scheduledArrivalTime).toLocaleTimeString('es-ES', {
                       hour: '2-digit',
@@ -240,7 +240,7 @@ export default function DriverHistoryScreen() {
                         lightColor={EarthColors.earthDarker}
                         darkColor={EarthColors.beigeLight}
                         style={styles.tripRoute}>
-                        {trip.frequency.route.origin} - {trip.frequency.route.destination}
+                        {trip.routeOrigin || trip.frequencySegment?.routeOrigin} - {trip.routeDestination || trip.frequencySegment?.routeDestination}
                       </ThemedText>
                     </View>
                     <View

@@ -17,6 +17,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { postJsonWithAuth } from '@/services/api';
 
+// Helper para convertir array de fecha/hora a Date
+const arrayToDate = (dateArray: any): Date => {
+  if (!dateArray) return new Date();
+  if (Array.isArray(dateArray)) {
+    const [year, month, day, hour = 0, minute = 0] = dateArray;
+    return new Date(year, month - 1, day, hour, minute);
+  }
+  return new Date(dateArray);
+};
+
 export default function ScanTicketScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
@@ -95,7 +105,7 @@ export default function ScanTicketScreen() {
           `Destino: ${ticket.destinationStopName}\n` +
           `Ruta: ${ticket.routeName}\n` +
           `Bus: ${ticket.busPlate}\n` +
-          `Fecha: ${new Date(ticket.scheduledDepartureTime).toLocaleDateString()}`,
+          `Fecha: ${arrayToDate(ticket.scheduledDepartureTime).toLocaleDateString()}`,
           [{ 
             text: 'OK', 
             onPress: () => { 
