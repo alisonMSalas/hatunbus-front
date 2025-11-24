@@ -4,6 +4,7 @@ import { Header } from '@/components/ui/header';
 import { API_BASE_URL } from '@/constants/api';
 import { EarthColors } from '@/constants/theme';
 import { getJsonWithAuth } from '@/services/api';
+import { TripDto } from '@/types/trip';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -14,6 +15,17 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+
+// Helper para convertir array de fecha/hora a Date
+const arrayToDate = (dateArray: any): Date => {
+  if (!dateArray) return new Date();
+  if (Array.isArray(dateArray)) {
+    // Formato: [year, month, day, hour, minute] o [year, month, day, hour, minute, second, nanosecond]
+    const [year, month, day, hour = 0, minute = 0] = dateArray;
+    return new Date(year, month - 1, day, hour, minute);
+  }
+  return new Date(dateArray);
+};
 
 interface TripResult {
   id: string;
@@ -48,23 +60,24 @@ export default function SearchResultsScreen() {
   const loadTrips = async () => {
     try {
       setLoading(true);
-      const data = await getJsonWithAuth(
+      const data: TripDto[] = await getJsonWithAuth(
         `${API_BASE_URL}/viajes/buscar?fecha=${searchParams.date}&origen=${encodeURIComponent(searchParams.origin)}&destino=${encodeURIComponent(searchParams.destination)}`
       );
 
       // Map backend data to frontend format
-      const mappedTrips = data.map((trip: any) => {
+      const mappedTrips = data.map((trip: TripDto) => {
         // Calcular hora de llegada si no viene del backend
         let arrivalTime = trip.scheduledArrivalTime;
-        if (!arrivalTime && trip.scheduledDepartureTime && trip.frequency?.estimatedDuration) {
-          const departure = new Date(trip.scheduledDepartureTime);
-          const arrival = new Date(departure.getTime() + trip.frequency.estimatedDuration * 60000);
+        if (!arrivalTime && trip.scheduledDepartureTime && trip.frequencySegment?.estimatedDuration) {
+          const departure = arrayToDate(trip.scheduledDepartureTime);
+          const arrival = new Date(departure.getTime() + trip.frequencySegment.estimatedDuration * 60000);
           arrivalTime = arrival.toISOString();
         }
 
         // Formatear precio con 2 decimales
         let price = '0.00';
-        const basePrice = trip.frequency?.route?.basePrice;
+        // Obtener el precio base de la ruta del segmento de frecuencia
+        const basePrice = trip.frequencySegment?.route?.basePrice;
         if (basePrice != null) {
           const priceNum = typeof basePrice === 'string' ? parseFloat(basePrice) : basePrice;
           if (!isNaN(priceNum)) {
@@ -72,10 +85,9 @@ export default function SearchResultsScreen() {
           }
         }
 
-        // Como no hay stops en la BD, usar directamente los IDs de las ciudades de la ruta
-        // Estos IDs se usarán como "stop IDs" temporalmente
-        const originCityId = trip.frequency?.route?.originCityId || trip.routeOriginCityId;
-        const destinationCityId = trip.frequency?.route?.destinationCityId || trip.routeDestinationCityId;
+        // Usar los IDs de las ciudades de origen y destino de la ruta del segmento
+        const originCityId = trip.frequencySegment?.route?.originCityId || trip.routeOrigin;
+        const destinationCityId = trip.frequencySegment?.route?.destinationCityId || trip.routeDestination;
 
         return {
           id: trip.id,
@@ -94,22 +106,23 @@ export default function SearchResultsScreen() {
 
       setTrips(mappedTrips);
     } catch (error) {
+      console.error('Error al cargar viajes:', error);
       alert('Error al cargar los viajes. Por favor intenta nuevamente.');
     } finally {
       setLoading(false);
     }
   };
 
-  const formatTime = (datetime: string) => {
+  const formatTime = (datetime: any) => {
     if (!datetime) return '--:--';
-    const date = new Date(datetime);
+    const date = arrayToDate(datetime);
     return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   };
 
-  const calculateDuration = (departure: string, arrival: string) => {
+  const calculateDuration = (departure: any, arrival: any) => {
     if (!departure || !arrival) return '--';
-    const dep = new Date(departure);
-    const arr = new Date(arrival);
+    const dep = arrayToDate(departure);
+    const arr = arrayToDate(arrival);
     const diff = arr.getTime() - dep.getTime();
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));

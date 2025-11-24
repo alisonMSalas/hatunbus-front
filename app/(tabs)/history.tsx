@@ -16,6 +16,16 @@ import {
     ActivityIndicator,
 } from 'react-native';
 
+// Helper para convertir array de fecha/hora a Date
+const arrayToDate = (dateArray: any): Date => {
+  if (!dateArray) return new Date();
+  if (Array.isArray(dateArray)) {
+    const [year, month, day, hour = 0, minute = 0] = dateArray;
+    return new Date(year, month - 1, day, hour, minute);
+  }
+  return new Date(dateArray);
+};
+
 interface HistoryTicket {
   id: string;
   origin: string;
@@ -102,7 +112,7 @@ export default function HistoryScreen() {
       purchases.forEach((purchase: any) => {
         if (purchase.tickets && purchase.tickets.length > 0) {
           purchase.tickets.forEach((ticket: any) => {
-            const tripDate = new Date(ticket.scheduledDepartureTime || ticket.trip?.scheduledDepartureTime || ticket.trip?.date);
+            const tripDate = arrayToDate(ticket.scheduledDepartureTime || ticket.trip?.scheduledDepartureTime || ticket.trip?.date);
 
             // NUEVA LÓGICA:
             // Mostrar en historial si:
@@ -195,9 +205,9 @@ export default function HistoryScreen() {
       }
     });
 
-    // Convertir Map a array y ordenar por fecha descendente (más recientes primero)
+    // Convertir Map a array y ordenar por fecha (más reciente primero)
     return Array.from(grouped.values()).sort((a, b) => {
-      return new Date(b.scheduledDepartureTime).getTime() - new Date(a.scheduledDepartureTime).getTime();
+      return arrayToDate(b.scheduledDepartureTime).getTime() - arrayToDate(a.scheduledDepartureTime).getTime();
     });
   };
 
@@ -209,13 +219,20 @@ export default function HistoryScreen() {
     });
   };
 
-  const formatTime = (datetime: string) => {
+  const formatTime = (datetime: any) => {
     if (!datetime) return '--:--';
-    const date = new Date(datetime);
+    const date = arrayToDate(datetime);
     return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   };
 
   const handleViewTicket = (ticket: HistoryTicket) => {
+    // Convertir usageDate a string ISO si es un array
+    let usageDateStr = '';
+    if (ticket.usageDate) {
+      const usageDate = arrayToDate(ticket.usageDate);
+      usageDateStr = usageDate.toISOString();
+    }
+
     router.push({
       pathname: '/ticket-detail',
       params: {
@@ -230,15 +247,15 @@ export default function HistoryScreen() {
         ticketId: ticket.ticketId,
         isHistory: 'true',
         status: ticket.status,
-        usageDate: ticket.usageDate || '',
+        usageDate: usageDateStr,
         validatingDriver: ticket.validatingDriver || '',
       },
     });
   };
 
-  const formatUsageDate = (usageDate?: string) => {
+  const formatUsageDate = (usageDate?: any) => {
     if (!usageDate) return '';
-    const date = new Date(usageDate);
+    const date = arrayToDate(usageDate);
     return date.toLocaleDateString('es-ES', {
       year: 'numeric',
       month: '2-digit',

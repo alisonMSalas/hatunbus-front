@@ -16,6 +16,16 @@ import {
     ActivityIndicator,
 } from 'react-native';
 
+// Helper para convertir array de fecha/hora a Date
+const arrayToDate = (dateArray: any): Date => {
+  if (Array.isArray(dateArray)) {
+    // Formato: [year, month, day, hour, minute] o [year, month, day, hour, minute, second, nanosecond]
+    const [year, month, day, hour = 0, minute = 0] = dateArray;
+    return new Date(year, month - 1, day, hour, minute);
+  }
+  return new Date(dateArray);
+};
+
 interface Trip {
   id: string;
   origin: string;
@@ -102,11 +112,12 @@ export default function TicketsScreen() {
         if (purchase.tickets && purchase.tickets.length > 0) {
           purchase.tickets.forEach((ticket: any) => {
             // Log para debug
-            console.log('Ticket:', {
+            console.log('🎫 Analizando Ticket:', {
               id: ticket.id,
               status: ticket.status,
               tripStatus: ticket.tripStatus,
-              route: `${ticket.originStopName} -> ${ticket.destinationStopName}`
+              route: `${ticket.originStopName} -> ${ticket.destinationStopName}`,
+              scheduledDepartureTime: ticket.scheduledDepartureTime
             });
             
             // NUEVA LÓGICA:
@@ -116,22 +127,40 @@ export default function TicketsScreen() {
             
             // Filtrar por status del ticket
             if (ticket.status !== 'PAID' && ticket.status !== 'USED') {
-              console.log('Ticket filtrado por status:', ticket.status);
+              console.log('❌ Ticket filtrado por status:', ticket.status);
               return; // Saltar tickets cancelados, expirados o pendientes de pago
             }
+            
+            console.log('✅ Ticket tiene status válido:', ticket.status);
+            console.log('✅ Ticket tiene status válido:', ticket.status);
             
             // Filtrar por status del viaje - SOLO excluir viajes completados o cancelados
             // Mantener IN_PROGRESS porque el pasajero necesita ver sus boletos durante el viaje
             if (ticket.tripStatus === 'COMPLETED' || ticket.tripStatus === 'CANCELED') {
-              console.log('Ticket filtrado por tripStatus:', ticket.tripStatus);
+              console.log('❌ Ticket filtrado por tripStatus:', ticket.tripStatus);
               return; // Este ticket debe estar en el historial
             }
 
-            const tripDate = new Date(ticket.scheduledDepartureTime || ticket.trip?.scheduledDepartureTime || ticket.trip?.date);
-            const isUpcoming = tripDate >= now;
+            console.log('✅ Viaje tiene status activo:', ticket.tripStatus);
 
-            // Only process upcoming trips (viajes que aún no han pasado)
-            if (isUpcoming) {
+            const tripDate = arrayToDate(ticket.scheduledDepartureTime || ticket.trip?.scheduledDepartureTime || ticket.trip?.date);
+            
+            // IMPORTANTE: Si el viaje está IN_PROGRESS o SCHEDULED, siempre mostrarlo
+            // Solo filtrar por fecha si ya COMPLETED o en el pasado Y no tiene status activo
+            const isActiveTrip = ticket.tripStatus === 'IN_PROGRESS' || ticket.tripStatus === 'SCHEDULED';
+            const isUpcoming = tripDate >= now;
+            
+            console.log('📅 Validación de fecha:', {
+              tripDate: tripDate.toISOString(),
+              now: now.toISOString(),
+              isActiveTrip,
+              isUpcoming,
+              shouldShow: isActiveTrip || isUpcoming
+            });
+            
+            // Mostrar si: el viaje está activo (IN_PROGRESS/SCHEDULED) O si aún no ha pasado la fecha
+            if (isActiveTrip || isUpcoming) {
+              console.log('✅ Ticket será agregado a la lista');
               const trip: Trip = {
                 id: purchase.id,
                 ticketId: ticket.id,
@@ -151,6 +180,8 @@ export default function TicketsScreen() {
                 tripStatus: ticket.tripStatus,
               };
               upcoming.push(trip);
+            } else {
+              console.log('❌ Ticket NO será agregado - fecha pasada y viaje no activo');
             }
           });
         }
@@ -158,6 +189,8 @@ export default function TicketsScreen() {
 
       // Agrupar tickets por viaje (tripId + scheduledDepartureTime)
       const grouped = groupTicketsByTrip(upcoming);
+      console.log('📊 Total tickets procesados:', upcoming.length);
+      console.log('📦 Grupos de viajes creados:', grouped.length);
       setGroupedTrips(grouped);
     } catch (error: any) {
       // No mostrar alert si simplemente no hay compras
@@ -201,7 +234,7 @@ export default function TicketsScreen() {
 
     // Convertir Map a array y ordenar por fecha
     return Array.from(grouped.values()).sort((a, b) => {
-      return new Date(a.scheduledDepartureTime).getTime() - new Date(b.scheduledDepartureTime).getTime();
+      return arrayToDate(a.scheduledDepartureTime).getTime() - arrayToDate(b.scheduledDepartureTime).getTime();
     });
   };
 
@@ -213,9 +246,9 @@ export default function TicketsScreen() {
     });
   };
 
-  const formatTime = (datetime: string) => {
+  const formatTime = (datetime: any) => {
     if (!datetime) return '--:--';
-    const date = new Date(datetime);
+    const date = arrayToDate(datetime);
     return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   };
 

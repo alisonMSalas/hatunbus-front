@@ -19,6 +19,17 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
+// Helper para formatear tiempo desde array o string
+const formatTime = (time: any): string => {
+  if (!time) return 'N/A';
+  if (Array.isArray(time)) {
+    // Formato: [hour, minute]
+    const [hour, minute] = time;
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+  return String(time);
+};
+
 // Tipo de datos del viaje
 interface Trip {
   id: string;
@@ -62,15 +73,42 @@ export default function DriverHomeScreen() {
 
       // Cargar viajes programados (SCHEDULED)
       const data = await getJsonWithAuth<Trip[]>(`${API_BASE_URL}/viajes/conductor?t=${timestamp}`);
+      
+      console.log('🚌 Viajes cargados del backend:', data.length);
+      if (data.length > 0) {
+        console.log('📋 Primer viaje:', JSON.stringify(data[0], null, 2));
+      }
 
       const sortedTrips = data.sort((a, b) => {
-        const dateA = new Date(a.scheduledDate + 'T' + a.frequency.departureTime);
-        const dateB = new Date(b.scheduledDate + 'T' + b.frequency.departureTime);
+        // Convertir scheduledDepartureTime que puede venir como array o string
+        const getDateTime = (trip: Trip) => {
+          const sdt = trip.scheduledDepartureTime;
+          if (Array.isArray(sdt)) {
+            // Formato: [year, month, day, hour, minute]
+            return new Date(sdt[0], sdt[1] - 1, sdt[2], sdt[3] || 0, sdt[4] || 0);
+          }
+          return new Date(sdt);
+        };
+        
+        const dateA = getDateTime(a);
+        const dateB = getDateTime(b);
         return dateA.getTime() - dateB.getTime();
       });
 
+      console.log('✅ Viajes ordenados:', sortedTrips.length);
+      console.log('🔍 Primeros 3 viajes ordenados:', sortedTrips.slice(0, 3).map(t => ({
+        id: t.id,
+        date: t.date,
+        route: `${t.routeOrigin} → ${t.routeDestination}`,
+        time: Array.isArray(t.scheduledDepartureTime) 
+          ? `${t.scheduledDepartureTime[3]}:${String(t.scheduledDepartureTime[4]).padStart(2, '0')}`
+          : t.scheduledDepartureTime
+      })));
+      
       setTrips(sortedTrips);
+      console.log('✅ Viajes guardados en estado:', sortedTrips.length);
     } catch (error) {
+      console.error('❌ Error al cargar viajes:', error);
       Alert.alert('Error', 'No se pudieron cargar los viajes asignados');
     } finally {
       setLoading(false);
@@ -207,7 +245,7 @@ export default function DriverHomeScreen() {
                     lightColor={EarthColors.earthDarker}
                     darkColor={EarthColors.beigeLight}
                     style={styles.locationText}>
-                    {mainTrip.frequency.route.origin}
+                    {mainTrip.routeOrigin || mainTrip.frequencySegment?.routeOrigin || 'Origen'}
                   </ThemedText>
                 </View>
                 <MaterialIcons
@@ -221,7 +259,7 @@ export default function DriverHomeScreen() {
                     lightColor={EarthColors.earthDarker}
                     darkColor={EarthColors.beigeLight}
                     style={styles.locationText}>
-                    {mainTrip.frequency.route.destination}
+                    {mainTrip.routeDestination || mainTrip.frequencySegment?.routeDestination || 'Destino'}
                   </ThemedText>
                 </View>
               </View>
@@ -242,8 +280,8 @@ export default function DriverHomeScreen() {
                   <MaterialIcons name="access-time" size={20} color={EarthColors.earthDark} />
                   <View style={styles.infoTextContainer}>
                     <ThemedText style={styles.infoLabel}>Hora</ThemedText>
-                    <ThemedText style={styles.infoValue}>
-                      {mainTrip.frequency.departureTime}
+                    <ThemedText style={styles.tripTime}>
+                      {formatTime(mainTrip.frequencySegment?.departureTime || mainTrip.frequency?.departureTime)}
                     </ThemedText>
                   </View>
                 </View>
@@ -350,12 +388,15 @@ export default function DriverHomeScreen() {
             <ThemedText style={styles.sectionTitle}>Próximos Viajes</ThemedText>
 
             {upcomingTrips.map((trip) => {
+              // Validar que tenga información básica de ruta
+              if (!trip.routeOrigin || !trip.routeDestination) return null;
+              
               return (
                 <View key={trip.id} style={styles.upcomingTripCard}>
                   <View style={styles.upcomingTripHeader}>
                     <View style={styles.upcomingRoute}>
                       <ThemedText style={styles.upcomingOrigin}>
-                        {trip.frequency.route.origin}
+                        {trip.routeOrigin || trip.frequencySegment?.routeOrigin || 'Origen'}
                       </ThemedText>
                       <MaterialIcons
                         name="arrow-forward"
@@ -363,7 +404,7 @@ export default function DriverHomeScreen() {
                         color={EarthColors.earthDark}
                       />
                       <ThemedText style={styles.upcomingDestination}>
-                        {trip.frequency.route.destination}
+                        {trip.routeDestination || trip.frequencySegment?.routeDestination || 'Destino'}
                       </ThemedText>
                     </View>
                   </View>
@@ -378,7 +419,7 @@ export default function DriverHomeScreen() {
                     <View style={styles.upcomingInfoItem}>
                       <MaterialIcons name="access-time" size={16} color={EarthColors.earthDark} />
                       <ThemedText style={styles.upcomingInfoText}>
-                        {trip.frequency.departureTime}
+                        {formatTime(trip.frequencySegment?.departureTime || trip.frequency?.departureTime)}
                       </ThemedText>
                     </View>
                     <View style={styles.upcomingInfoItem}>
