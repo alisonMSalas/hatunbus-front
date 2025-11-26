@@ -41,6 +41,7 @@ interface Trip {
   tripId: string;
   scheduledDepartureTime: string;
   qrCode?: string;
+  cooperativeLogo?: string;
   ticketStatus?: 'PAID' | 'USED' | 'PENDING_PAYMENT' | 'CANCELED' | 'EXPIRED';
   tripStatus?: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELED';
 }
@@ -55,6 +56,7 @@ interface GroupedTrip {
   bus: string;
   scheduledDepartureTime: string;
   tickets: Trip[];
+  cooperativeLogo?: string;
 }
 
 export default function TicketsScreen() {
@@ -178,6 +180,7 @@ export default function TicketsScreen() {
                 qrCode: ticket.qrCode,
                 ticketStatus: ticket.status,
                 tripStatus: ticket.tripStatus,
+                cooperativeLogo: ticket.cooperativeLogo,
               };
               upcoming.push(trip);
             } else {
@@ -227,6 +230,7 @@ export default function TicketsScreen() {
           cooperative: trip.cooperative,
           bus: trip.bus,
           scheduledDepartureTime: trip.scheduledDepartureTime,
+          cooperativeLogo: trip.cooperativeLogo,
           tickets: [trip],
         });
       }
@@ -266,6 +270,7 @@ export default function TicketsScreen() {
         bus: ticket.bus,
         ticketId: ticket.ticketId,
         qrCode: ticket.qrCode || '',
+        cooperativeLogo: ticket.cooperativeLogo || '',
       },
     });
   };
