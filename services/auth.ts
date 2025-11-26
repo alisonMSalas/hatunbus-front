@@ -7,6 +7,30 @@ export type LoginResponse = {
   user: any;
 };
 
+type AuthState = {
+  token: string | null;
+  user: any | null;
+};
+
+type AuthListener = (state: AuthState) => void;
+
+const listeners = new Set<AuthListener>();
+
+const notifyAuthListeners = (state: AuthState) => {
+  listeners.forEach((listener) => {
+    try {
+      listener(state);
+    } catch (error) {
+      console.error('Auth listener error:', error);
+    }
+  });
+};
+
+export const subscribeToAuthChanges = (listener: AuthListener) => {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+};
+
 const JWT_KEY = 'hatunbus_jwt';
 const USER_KEY = 'hatunbus_user';
 
@@ -96,6 +120,7 @@ export async function login(email: string, password: string): Promise<LoginRespo
     throw e;
   }
 
+  notifyAuthListeners({ token: data.token, user: data.user });
   return data;
 }
 
@@ -162,6 +187,7 @@ export async function logout(): Promise<void> {
     await storage.deleteItem(USER_KEY);
   } catch (e) {
   }
+  notifyAuthListeners({ token: null, user: null });
 }
 
 export async function initAuthFromStore(): Promise<{ token: string | null; user: any | null }> {

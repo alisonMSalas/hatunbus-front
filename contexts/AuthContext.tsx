@@ -1,5 +1,5 @@
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
-import { initAuthFromStore, login as loginService, logout as logoutService } from '@/services/auth';
+import { initAuthFromStore, login as loginService, logout as logoutService, subscribeToAuthChanges } from '@/services/auth';
 
 interface AuthContextType {
   token: string | null;
@@ -24,6 +24,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(u);
       setIsLoading(false);
     })();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToAuthChanges(({ token: nextToken, user: nextUser }) => {
+      setToken(nextToken);
+      setUser(nextUser);
+    });
+    return unsubscribe;
   }, []);
 
   const login = async (email: string, password: string) => {
