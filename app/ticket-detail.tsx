@@ -9,6 +9,7 @@ import {
     ScrollView,
     StyleSheet,
     View,
+    Image,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
@@ -39,6 +40,7 @@ export default function TicketDetailScreen() {
     time: Array.isArray(params.time) ? params.time[0] : params.time || '10:00 AM',
     passenger: Array.isArray(params.passenger) ? params.passenger[0] : params.passenger || 'Isabella Rodriguez',
     cooperative: Array.isArray(params.cooperative) ? params.cooperative[0] : params.cooperative || 'Trans Andes',
+    cooperativeLogo: Array.isArray(params.cooperativeLogo) ? params.cooperativeLogo[0] : params.cooperativeLogo,
     bus: Array.isArray(params.bus) ? params.bus[0] : params.bus || 'Bus #456',
     ticketId: Array.isArray(params.ticketId) ? params.ticketId[0] : params.ticketId || 'TKT-123456',
   };
@@ -72,6 +74,25 @@ export default function TicketDetailScreen() {
 
         {/* Ticket Card */}
         <View style={styles.ticketCard}>
+          {/* Cooperative brand */}
+          <View style={styles.brandHeader}>
+            {ticketData.cooperativeLogo ? (
+              <Image
+                source={{ uri: ticketData.cooperativeLogo as string }}
+                style={styles.brandLogo}
+                resizeMode="contain"
+              />
+            ) : (
+              <View style={styles.brandLogoFallback}>
+                <MaterialIcons name="directions-bus" size={28} color={EarthColors.whiteBone} />
+              </View>
+            )}
+            <View style={styles.brandInfo}>
+              <ThemedText style={styles.brandName}>{ticketData.cooperative}</ThemedText>
+              <ThemedText style={styles.brandSubtitle}>Boleto digital</ThemedText>
+            </View>
+          </View>
+
           {/* Status Banner (only for history) */}
           {isHistory && (
             <View style={[
@@ -296,6 +317,42 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 8,
+  },
+  brandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    marginBottom: 8,
+  },
+  brandLogo: {
+    width: 64,
+    height: 64,
+    borderRadius: 12,
+    backgroundColor: EarthColors.whiteBone,
+    borderWidth: 1,
+    borderColor: EarthColors.grayLight,
+  },
+  brandLogoFallback: {
+    width: 64,
+    height: 64,
+    borderRadius: 12,
+    backgroundColor: EarthColors.blackSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  brandName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: EarthColors.blackSoft,
+  },
+  brandSubtitle: {
+    marginTop: 4,
+    color: EarthColors.earthDark,
   },
   statusBanner: {
     flexDirection: 'row',

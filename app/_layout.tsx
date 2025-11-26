@@ -1,13 +1,13 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { ActivityIndicator, Platform, View } from 'react-native';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { AuthProvider } from '@/contexts/AuthContext';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useMontserratFont } from '@/hooks/use-montserrat-font';
 
@@ -65,25 +65,58 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <Stack>
-            <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Screen name="login" options={{ headerShown: false }} />
-            <Stack.Screen name="register" options={{ headerShown: false }} />
-            <Stack.Screen name="role-selection" options={{ headerShown: false }} />
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="(driver-tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="search-results" options={{ headerShown: false }} />
-            <Stack.Screen name="trip-details" options={{ headerShown: false }} />
-            <Stack.Screen name="passenger-details" options={{ headerShown: false }} />
-            <Stack.Screen name="select-seats" options={{ headerShown: false }} />
-            <Stack.Screen name="payment-method" options={{ headerShown: false }} />
-            <Stack.Screen name="ticket-detail" options={{ headerShown: false }} />
-            <Stack.Screen name="scan-ticket" options={{ headerShown: false }} />
-          </Stack>
-          <StatusBar style="auto" />
-        </ThemeProvider>
+        <NavigationContainer colorScheme={colorScheme} />
       </AuthProvider>
     </SafeAreaProvider>
+  );
+}
+
+function NavigationContainer({ colorScheme }: { colorScheme: ReturnType<typeof useColorScheme> }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isLoading) return;
+    const firstSegment = segments[0] ?? '';
+    const authRoutes = new Set(['login', 'register', 'role-selection']);
+
+    if (!isAuthenticated && !authRoutes.has(firstSegment)) {
+      router.replace('/login');
+      return;
+    }
+
+    if (isAuthenticated && authRoutes.has(firstSegment)) {
+      router.replace('/');
+    }
+  }, [isAuthenticated, isLoading, segments, router]);
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  return (
+    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <Stack>
+        <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="login" options={{ headerShown: false }} />
+        <Stack.Screen name="register" options={{ headerShown: false }} />
+        <Stack.Screen name="role-selection" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="(driver-tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="search-results" options={{ headerShown: false }} />
+        <Stack.Screen name="trip-details" options={{ headerShown: false }} />
+        <Stack.Screen name="passenger-details" options={{ headerShown: false }} />
+        <Stack.Screen name="select-seats" options={{ headerShown: false }} />
+        <Stack.Screen name="payment-method" options={{ headerShown: false }} />
+        <Stack.Screen name="ticket-detail" options={{ headerShown: false }} />
+        <Stack.Screen name="scan-ticket" options={{ headerShown: false }} />
+      </Stack>
+      <StatusBar style="auto" />
+    </ThemeProvider>
   );
 }
