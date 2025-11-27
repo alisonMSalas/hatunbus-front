@@ -5,6 +5,7 @@ import { API_BASE_URL } from '@/constants/api';
 import { EarthColors } from '@/constants/theme';
 import { getJsonWithAuth } from '@/services/api';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { router } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -93,6 +94,10 @@ export default function DriverHistoryScreen() {
       default:
         return status;
     }
+  };
+
+  const handleOpenReport = (tripId: string) => {
+    router.push(`/driver-trip-report?tripId=${tripId}`);
   };
 
   const formatDateTime = (dateString: string, timeString?: string) => {
@@ -228,7 +233,7 @@ export default function DriverHistoryScreen() {
                   : 'N/A';
 
                 return (
-                  <View key={trip.id} style={styles.tripCard}>
+                  <TouchableOpacity key={trip.id} style={styles.tripCard} activeOpacity={0.85} onPress={() => handleOpenReport(trip.id)}>
                   <View style={styles.tripHeader}>
                     <View style={styles.tripRouteContainer}>
                       <MaterialIcons
@@ -300,7 +305,7 @@ export default function DriverHistoryScreen() {
                       </ThemedText>
                     </View>
                   </View>
-                </View>
+                  </TouchableOpacity>
                 );
               } catch (error) {
                 return null;
