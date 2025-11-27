@@ -22,14 +22,12 @@ interface Seat {
   number: string; // V1, P1, V2, P2, etc.
   status: SeatStatus;
   passengerInitials?: string;
-  tripSeatId?: string; // ID del TripSeat en el backend
 }
 
 interface PassengerSeat {
   passengerIndex: number;
   passengerName: string;
   seatNumber: string | null; // V1, P1, V2, P2, etc.
-  tripSeatId?: string | null; // ID del TripSeat
 }
 
 interface PassengerInfo {
@@ -100,8 +98,7 @@ export default function SelectSeatsScreen() {
           id: seat.seatNumber, // Usamos seatNumber como ID (V1, P1, etc.)
           number: seat.seatNumber, // V1, P1, V2, P2, etc.
           status: seatStatus,
-          passengerInitials: undefined,
-          tripSeatId: seat.tripSeatId, // Guardamos el ID del TripSeat si existe
+          passengerInitials: undefined
         };
       });
 
@@ -111,8 +108,7 @@ export default function SelectSeatsScreen() {
       const initialPassengerSeats: PassengerSeat[] = passengersData.map((passenger, index) => ({
         passengerIndex: index,
         passengerName: passenger.fullName,
-        seatNumber: null,
-        tripSeatId: null,
+        seatNumber: null
       }));
 
       setPassengerSeats(initialPassengerSeats);
@@ -184,7 +180,6 @@ export default function SelectSeatsScreen() {
     // Actualizar el asiento del pasajero activo
     const updatedPassengerSeats = [...passengerSeats];
     updatedPassengerSeats[activePassengerIndex].seatNumber = seatNumber;
-    updatedPassengerSeats[activePassengerIndex].tripSeatId = seat.tripSeatId || null;
     setPassengerSeats(updatedPassengerSeats);
   };
 

@@ -110,20 +110,17 @@ export interface TripDto {
 }
 
 export interface SeatAvailabilityDto {
-  id?: string; // TripSeat ID if exists
   tripId: string;
   seatNumber: string; // V1, P1, V2, P2, etc. (Logical numbering)
   seatType: 'VENTANA' | 'PASILLO';
   status: 'available' | 'occupied' | 'reserved';
   price?: number;
-  tripSeatId?: string; // ID del asiento en el viaje específico
 }
 
 export interface TicketDto {
   id: string;
   purchaseId: string;
   tripId: string;
-  tripSeatId: string;
   passengerName: string;
   passengerIdCard: string;
   passengerEmail?: string;
