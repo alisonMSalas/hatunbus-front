@@ -21,7 +21,7 @@ const notifyAuthListeners = (state: AuthState) => {
     try {
       listener(state);
     } catch (error) {
-      console.error('Auth listener error:', error);
+      // Error in auth listener
     }
   });
 };
@@ -93,14 +93,11 @@ export async function login(email: string, password: string): Promise<LoginRespo
   try {
     // Validar que el token no esté vacío
     if (!data.token || data.token.trim() === '') {
-      console.error('Token vacío recibido del servidor');
       throw new Error('Token recibido está vacío');
     }
     
-    console.log('Guardando token en storage...');
     tokenCache = data.token;
     await storage.setItem(JWT_KEY, data.token);
-    console.log('Token guardado exitosamente');
     
     // Extract only essential user fields (exclude large fields like profilePhoto)
     const essentialUserData = data.user ? {
@@ -114,9 +111,7 @@ export async function login(email: string, password: string): Promise<LoginRespo
     } : {};
     
     await storage.setItem(USER_KEY, JSON.stringify(essentialUserData));
-    console.log('Usuario guardado exitosamente');
   } catch (e) {
-    console.error('Error al guardar token:', e);
     throw e;
   }
 
@@ -158,15 +153,12 @@ export function setToken(token: string | null) {
 
 export async function getToken(): Promise<string | null> {
   if (tokenCache) {
-    console.log('Token from cache');
     return tokenCache;
   }
   try {
     tokenCache = await storage.getItem(JWT_KEY);
-    console.log('Token from storage:', tokenCache ? 'EXISTS' : 'NULL');
     return tokenCache;
   } catch (e) {
-    console.error('Error getting token:', e);
     return null;
   }
 }

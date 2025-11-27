@@ -6,7 +6,7 @@ import { ThemedTextInput } from '@/components/ui/text-input';
 import { EarthColors } from '@/constants/theme';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     FlatList,
     Modal,
@@ -14,7 +14,10 @@ import {
     StyleSheet,
     TouchableOpacity,
     View,
+    ActivityIndicator,
 } from 'react-native';
+import { useAuth } from '@/contexts/AuthContext';
+import { savedPassengerService, SavedPassenger } from '@/services/savedPassenger';
 
 interface PassengerInfo {
   fullName: string;
@@ -33,6 +36,7 @@ interface PassengerErrors {
 
 export default function PassengerDetailsScreen() {
   const params = useLocalSearchParams();
+  const { user, token } = useAuth();
   
   // Obtener el número de pasajeros desde los parámetros
   const passengersCount = parseInt(
@@ -67,6 +71,34 @@ export default function PassengerDetailsScreen() {
 
   // Estado para controlar qué modal de tipo de pasajero está abierto
   const [showPassengerTypePicker, setShowPassengerTypePicker] = useState<number | null>(null);
+
+  // Estados para pasajeros guardados
+  const [savedPassengers, setSavedPassengers] = useState<SavedPassenger[]>([]);
+  const [loadingSavedPassengers, setLoadingSavedPassengers] = useState(false);
+  const [showSavedPassengerPicker, setShowSavedPassengerPicker] = useState<number | null>(null);
+  
+  // Estado para modal de selección múltiple
+  const [showMultiSelectModal, setShowMultiSelectModal] = useState(false);
+  const [selectedPassengerIds, setSelectedPassengerIds] = useState<string[]>([]);
+
+  // Cargar pasajeros guardados al montar el componente
+  useEffect(() => {
+    loadSavedPassengers();
+  }, []);
+
+  const loadSavedPassengers = async () => {
+    if (!user?.id || !token) return;
+    
+    try {
+      setLoadingSavedPassengers(true);
+      const passengers = await savedPassengerService.listByUser(user.id, token);
+      setSavedPassengers(passengers);
+    } catch (error) {
+      // Error silencioso
+    } finally {
+      setLoadingSavedPassengers(false);
+    }
+  };
 
   // Validación de cédula ecuatoriana
   const validateEcuadorianId = (id: string): boolean => {
@@ -180,7 +212,144 @@ export default function PassengerDetailsScreen() {
     setExpandedTickets(updatedExpanded);
   };
 
-  const handleSelectSeats = () => {
+  const applySavedPassenger = (passengerIndex: number, savedPassenger: SavedPassenger) => {
+    const updatedPassengers = [...passengers];
+    updatedPassengers[passengerIndex] = {
+      fullName: savedPassenger.fullName,
+      identificationNumber: savedPassenger.identificationNumber,
+      email: savedPassenger.email,
+      phone: savedPassenger.phone,
+      passengerType: savedPassenger.passengerType,
+    };
+    setPassengers(updatedPassengers);
+    setShowSavedPassengerPicker(null);
+    
+    // Auto-cerrar el ticket si está completo
+    const passenger = updatedPassengers[passengerIndex];
+    const isComplete = passenger.fullName && passenger.identificationNumber && 
+                      passenger.email && passenger.phone;
+    if (isComplete) {
+      const updatedExpanded = [...expandedTickets];
+      updatedExpanded[passengerIndex] = false;
+      setExpandedTickets(updatedExpanded);
+      
+      // Abrir el siguiente ticket si existe y está vacío
+      if (passengerIndex + 1 < passengers.length) {
+        const nextPassenger = updatedPassengers[passengerIndex + 1];
+        if (!nextPassenger.fullName) {
+          updatedExpanded[passengerIndex + 1] = true;
+          setExpandedTickets(updatedExpanded);
+        }
+      }
+    }
+  };
+
+  // Verificar si un pasajero ya fue usado en otro ticket
+  const isPassengerAlreadyUsed = (savedPassenger: SavedPassenger, currentIndex: number): boolean => {
+    return passengers.some((passenger, index) => 
+      index !== currentIndex && 
+      passenger.identificationNumber === savedPassenger.identificationNumber &&
+      passenger.identificationNumber !== ''
+    );
+  };
+
+  // Manejar selección/deselección de checkbox
+  const togglePassengerSelection = (passengerId: string) => {
+    setSelectedPassengerIds(prev => {
+      if (prev.includes(passengerId)) {
+        return prev.filter(id => id !== passengerId);
+      } else {
+        // Limitar a la cantidad de pasajeros necesarios
+        if (prev.length < passengersCount) {
+          return [...prev, passengerId];
+        }
+        return prev;
+      }
+    });
+  };
+
+  // Aplicar pasajeros seleccionados a los tickets
+  const applySelectedPassengers = () => {
+    const selectedPassengers = savedPassengers.filter(sp => 
+      selectedPassengerIds.includes(sp.id || '')
+    );
+
+    // LIMPIAR TODOS LOS TICKETS PRIMERO
+    const updatedPassengers = Array.from({ length: passengersCount }, () => ({
+      fullName: '',
+      identificationNumber: '',
+      email: '',
+      phone: '',
+      passengerType: 'ADULT' as 'ADULT' | 'CHILD' | 'SENIOR' | 'DISABLED',
+    }));
+    
+    const updatedExpanded = Array.from({ length: passengersCount }, (_, i) => i === 0);
+
+    // LLENAR SOLO LOS TICKETS CON PASAJEROS SELECCIONADOS
+    selectedPassengers.forEach((savedPassenger, index) => {
+      if (index < passengersCount) {
+        updatedPassengers[index] = {
+          fullName: savedPassenger.fullName,
+          identificationNumber: savedPassenger.identificationNumber,
+          email: savedPassenger.email,
+          phone: savedPassenger.phone,
+          passengerType: savedPassenger.passengerType,
+        };
+        // Cerrar tickets completados
+        updatedExpanded[index] = false;
+      }
+    });
+
+    // Si hay tickets sin llenar, abrir el primero vacío
+    const firstEmptyIndex = updatedPassengers.findIndex(p => !p.fullName);
+    if (firstEmptyIndex !== -1) {
+      updatedExpanded[firstEmptyIndex] = true;
+    }
+
+    setPassengers(updatedPassengers);
+    setExpandedTickets(updatedExpanded);
+    setShowMultiSelectModal(false);
+    setSelectedPassengerIds([]);
+  };
+
+  const savePassengersForFutureUse = async () => {
+    if (!user?.id || !token) return;
+
+    try {
+      // Crear un Set con las cédulas ya guardadas para verificación rápida
+      const existingIds = new Set(savedPassengers.map(sp => sp.identificationNumber));
+      
+      // También rastrear las que vamos guardando en esta sesión
+      const justSavedIds = new Set<string>();
+      
+      for (const passenger of passengers) {
+        // Solo guardar si no existe en la BD ni lo acabamos de guardar
+        const alreadyExists = existingIds.has(passenger.identificationNumber);
+        const justSaved = justSavedIds.has(passenger.identificationNumber);
+        
+        if (!alreadyExists && !justSaved) {
+          await savedPassengerService.create(user.id, {
+            fullName: passenger.fullName,
+            identificationNumber: passenger.identificationNumber,
+            email: passenger.email,
+            phone: passenger.phone,
+            passengerType: passenger.passengerType,
+            isSelf: false,
+          }, token);
+          
+          // Marcar como guardado para no duplicar en esta misma compra
+          justSavedIds.add(passenger.identificationNumber);
+        }
+      }
+      
+      // Recargar lista - IMPORTANTE: esperar a que termine
+      await loadSavedPassengers();
+    } catch (error) {
+      // Error silencioso pero el proceso continúa
+    }
+  };
+
+  const handleSelectSeats = async () => {
     // Validar todos los pasajeros
     let allValid = true;
     for (let i = 0; i < passengers.length; i++) {
@@ -193,6 +362,9 @@ export default function PassengerDetailsScreen() {
       alert('Por favor corrige los errores en la información de los pasajeros');
       return;
     }
+
+    // Auto-guardar pasajeros para futuras compras
+    await savePassengersForFutureUse();
 
     // Navegar a la pantalla de selección de asientos pasando la info de pasajeros
     router.push({
@@ -241,6 +413,34 @@ export default function PassengerDetailsScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
         
+        {/* Botón para usar pasajeros guardados */}
+        {savedPassengers.length > 0 && (
+          <TouchableOpacity 
+            style={styles.useExistingPassengersButton}
+            onPress={() => {
+              // Pre-seleccionar pasajeros que ya están en los tickets
+              const currentIds: string[] = [];
+              passengers.forEach(passenger => {
+                if (passenger.identificationNumber) {
+                  const savedPassenger = savedPassengers.find(
+                    sp => sp.identificationNumber === passenger.identificationNumber
+                  );
+                  if (savedPassenger?.id) {
+                    currentIds.push(savedPassenger.id);
+                  }
+                }
+              });
+              setSelectedPassengerIds(currentIds);
+              setShowMultiSelectModal(true);
+            }}>
+            <MaterialIcons name="people" size={24} color={EarthColors.whiteBone} />
+            <ThemedText style={styles.useExistingPassengersText}>
+              Escoger Pasajeros ({savedPassengers.length})
+            </ThemedText>
+            <MaterialIcons name="chevron-right" size={24} color={EarthColors.whiteBone} />
+          </TouchableOpacity>
+        )}
+        
         {/* Passenger Cards */}
         {passengers.map((passenger, index) => (
           <View key={index} style={styles.ticketCard}>
@@ -259,10 +459,12 @@ export default function PassengerDetailsScreen() {
                   style={styles.ticketTitle}>
                   Ticket {index + 1} de {passengersCount}
                 </ThemedText>
-                <ThemedText 
-                  lightColor={EarthColors.earthDark} 
-                  darkColor={EarthColors.grayEarth} 
-                  style={styles.ticketStatus}>
+                <ThemedText style={[
+                  styles.ticketStatus,
+                  getTicketStatus(index) === 'Completo' && styles.statusCompleto,
+                  getTicketStatus(index) === 'En progreso' && styles.statusEnProgreso,
+                  getTicketStatus(index) === 'Pendiente' && styles.statusPendiente
+                ]}>
                   {getTicketStatus(index)}
                 </ThemedText>
               </View>
@@ -455,6 +657,190 @@ export default function PassengerDetailsScreen() {
           </View>
         </Modal>
       )}
+
+      {/* Saved Passengers Picker Modal */}
+      {showSavedPassengerPicker !== null && (
+        <Modal 
+          visible={showSavedPassengerPicker !== null} 
+          transparent 
+          animationType="slide"
+          onRequestClose={() => setShowSavedPassengerPicker(null)}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <ThemedText style={styles.modalTitle}>Selecciona Pasajero</ThemedText>
+                <TouchableOpacity onPress={() => setShowSavedPassengerPicker(null)}>
+                  <IconSymbol name="xmark" size={24} color={EarthColors.blackSoft} />
+                </TouchableOpacity>
+              </View>
+              {loadingSavedPassengers ? (
+                <ActivityIndicator size="large" color={EarthColors.earthDark} style={{ padding: 20 }} />
+              ) : (
+                <FlatList
+                  data={savedPassengers}
+                  keyExtractor={(item) => item.id || ''}
+                  renderItem={({ item }) => {
+                    const isUsed = showSavedPassengerPicker !== null && 
+                                   isPassengerAlreadyUsed(item, showSavedPassengerPicker);
+                    
+                    return (
+                      <TouchableOpacity
+                        style={[
+                          styles.savedPassengerItem,
+                          isUsed && styles.savedPassengerItemDisabled
+                        ]}
+                        onPress={() => {
+                          if (showSavedPassengerPicker !== null && !isUsed) {
+                            applySavedPassenger(showSavedPassengerPicker, item);
+                          }
+                        }}
+                        disabled={isUsed}>
+                        <View style={styles.savedPassengerItemContent}>
+                          <View style={styles.savedPassengerInfo}>
+                            {item.isSelf && (
+                              <View style={styles.selfBadge}>
+                                <ThemedText style={styles.selfBadgeText}>YO</ThemedText>
+                              </View>
+                            )}
+                            <ThemedText style={[
+                              styles.savedPassengerName,
+                              isUsed && styles.savedPassengerTextDisabled
+                            ]}>
+                              {item.fullName}
+                            </ThemedText>
+                            <ThemedText style={[
+                              styles.savedPassengerDetail,
+                              isUsed && styles.savedPassengerTextDisabled
+                            ]}>
+                              CI: {item.identificationNumber}
+                            </ThemedText>
+                            <ThemedText style={[
+                              styles.savedPassengerDetail,
+                              isUsed && styles.savedPassengerTextDisabled
+                            ]}>
+                              {item.email}
+                            </ThemedText>
+                            {isUsed && (
+                              <ThemedText style={styles.usedLabel}>
+                                Ya seleccionado en otro ticket
+                              </ThemedText>
+                            )}
+                          </View>
+                          <IconSymbol 
+                            name="chevron.right" 
+                            size={20} 
+                            color={isUsed ? EarthColors.grayInput : EarthColors.earthDark} 
+                          />
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  }}
+                />
+              )}
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Modal de Selección Múltiple */}
+      <Modal 
+        visible={showMultiSelectModal} 
+        transparent 
+        animationType="slide"
+        onRequestClose={() => setShowMultiSelectModal(false)}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View>
+                <ThemedText style={styles.modalTitle}>Selecciona Pasajeros</ThemedText>
+                <ThemedText style={styles.modalSubtitle}>
+                  {selectedPassengerIds.length} de {passengersCount} seleccionados
+                </ThemedText>
+              </View>
+              <TouchableOpacity onPress={() => {
+                setShowMultiSelectModal(false);
+                setSelectedPassengerIds([]);
+              }}>
+                <IconSymbol name="xmark" size={24} color={EarthColors.blackSoft} />
+              </TouchableOpacity>
+            </View>
+            
+            {loadingSavedPassengers ? (
+              <ActivityIndicator size="large" color={EarthColors.earthDark} style={{ padding: 20 }} />
+            ) : (
+              <>
+                <FlatList
+                  data={savedPassengers}
+                  keyExtractor={(item) => item.id || ''}
+                  renderItem={({ item }) => {
+                    const isSelected = selectedPassengerIds.includes(item.id || '');
+                    const isLimitReached = selectedPassengerIds.length >= passengersCount && !isSelected;
+                    
+                    return (
+                      <TouchableOpacity
+                        style={[
+                          styles.checkboxPassengerItem,
+                          isLimitReached && styles.savedPassengerItemDisabled
+                        ]}
+                        onPress={() => !isLimitReached && togglePassengerSelection(item.id || '')}
+                        disabled={isLimitReached}>
+                        <View style={styles.checkboxContainer}>
+                          <View style={[
+                            styles.checkbox,
+                            isSelected && styles.checkboxSelected
+                          ]}>
+                            {isSelected && (
+                              <MaterialIcons name="check" size={18} color={EarthColors.whiteBone} />
+                            )}
+                          </View>
+                        </View>
+                        
+                        <View style={styles.savedPassengerInfo}>
+                          {item.isSelf && (
+                            <View style={styles.selfBadge}>
+                              <ThemedText style={styles.selfBadgeText}>YO</ThemedText>
+                            </View>
+                          )}
+                          <ThemedText style={[
+                            styles.savedPassengerName,
+                            isLimitReached && styles.savedPassengerTextDisabled
+                          ]}>
+                            {item.fullName}
+                          </ThemedText>
+                          <ThemedText style={[
+                            styles.savedPassengerDetail,
+                            isLimitReached && styles.savedPassengerTextDisabled
+                          ]}>
+                            CI: {item.identificationNumber}
+                          </ThemedText>
+                          <ThemedText style={[
+                            styles.savedPassengerDetail,
+                            isLimitReached && styles.savedPassengerTextDisabled
+                          ]}>
+                            {item.email}
+                          </ThemedText>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  }}
+                />
+                
+                {selectedPassengerIds.length > 0 && (
+                  <View style={styles.modalFooter}>
+                    <TouchableOpacity
+                      style={styles.applyButton}
+                      onPress={applySelectedPassengers}>
+                      <ThemedText style={styles.applyButtonText}>
+                        Aplicar Pasajeros ({selectedPassengerIds.length})
+                      </ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
@@ -613,6 +999,154 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
     marginLeft: 4,
+  },
+  savedPassengerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: EarthColors.grayInput || '#D1D5DB',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: EarthColors.earthLight || '#C7C1A7',
+    borderStyle: 'dashed',
+  },
+  savedPassengerButtonText: {
+    fontSize: 14,
+    flex: 1,
+    marginLeft: 8,
+  },
+  savedPassengerItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: EarthColors.grayInput || '#D1D5DB',
+  },
+  savedPassengerItemContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  savedPassengerInfo: {
+    flex: 1,
+  },
+  savedPassengerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: EarthColors.earthDarker,
+    marginBottom: 4,
+  },
+  savedPassengerDetail: {
+    fontSize: 13,
+    color: EarthColors.earthDark,
+    marginBottom: 2,
+  },
+  selfBadge: {
+    backgroundColor: EarthColors.earthDarker,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+    marginBottom: 6,
+  },
+  selfBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: EarthColors.beigeBone,
+    letterSpacing: 0.5,
+  },
+  savedPassengerItemDisabled: {
+    opacity: 0.5,
+    backgroundColor: EarthColors.grayLight || '#F5F5F5',
+  },
+  savedPassengerTextDisabled: {
+    color: EarthColors.grayInput || '#D1D5DB',
+  },
+  usedLabel: {
+    fontSize: 11,
+    color: '#DC2626',
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+  useExistingPassengersButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: EarthColors.earthDarker,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    marginBottom: 20,
+    shadowColor: EarthColors.blackSoft,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  useExistingPassengersText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: EarthColors.whiteBone,
+    marginLeft: 8,
+    flex: 1,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: EarthColors.earthDark,
+    marginTop: 4,
+  },
+  checkboxPassengerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: EarthColors.grayInput || '#D1D5DB',
+  },
+  checkboxContainer: {
+    marginRight: 12,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: EarthColors.earthDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: EarthColors.earthDarker,
+    borderColor: EarthColors.earthDarker,
+  },
+  modalFooter: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: EarthColors.grayInput || '#D1D5DB',
+  },
+  applyButton: {
+    backgroundColor: EarthColors.earthDarker,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  applyButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: EarthColors.whiteBone,
+  },
+  statusCompleto: {
+    color: '#10B981',
+    fontWeight: '600',
+  },
+  statusEnProgreso: {
+    color: '#F59E0B',
+    fontWeight: '600',
+  },
+  statusPendiente: {
+    color: '#6B7280',
+    fontWeight: '500',
   },
 });
 

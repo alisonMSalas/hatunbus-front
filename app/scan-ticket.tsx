@@ -88,11 +88,6 @@ export default function ScanTicketScreen() {
         driverId: user.id,
         tripId: tripId
       });
-      
-      console.log('========================================');
-      console.log('RESPUESTA RECIBIDA');
-      console.log('Response:', JSON.stringify(response, null, 2));
-      console.log('========================================');
 
       if (response.valid) {
         const ticket = response.ticket;

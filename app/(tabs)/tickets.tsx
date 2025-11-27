@@ -113,15 +113,6 @@ export default function TicketsScreen() {
       purchases.forEach((purchase: any) => {
         if (purchase.tickets && purchase.tickets.length > 0) {
           purchase.tickets.forEach((ticket: any) => {
-            // Log para debug
-            console.log('🎫 Analizando Ticket:', {
-              id: ticket.id,
-              status: ticket.status,
-              tripStatus: ticket.tripStatus,
-              route: `${ticket.originStopName} -> ${ticket.destinationStopName}`,
-              scheduledDepartureTime: ticket.scheduledDepartureTime
-            });
-            
             // NUEVA LÓGICA:
             // Mostrar tickets que:
             // 1. Estén PAID o USED (no cancelados, no expirados, no pending_payment)
@@ -129,21 +120,14 @@ export default function TicketsScreen() {
             
             // Filtrar por status del ticket
             if (ticket.status !== 'PAID' && ticket.status !== 'USED') {
-              console.log('❌ Ticket filtrado por status:', ticket.status);
               return; // Saltar tickets cancelados, expirados o pendientes de pago
             }
-            
-            console.log('✅ Ticket tiene status válido:', ticket.status);
-            console.log('✅ Ticket tiene status válido:', ticket.status);
             
             // Filtrar por status del viaje - SOLO excluir viajes completados o cancelados
             // Mantener IN_PROGRESS porque el pasajero necesita ver sus boletos durante el viaje
             if (ticket.tripStatus === 'COMPLETED' || ticket.tripStatus === 'CANCELED') {
-              console.log('❌ Ticket filtrado por tripStatus:', ticket.tripStatus);
               return; // Este ticket debe estar en el historial
             }
-
-            console.log('✅ Viaje tiene status activo:', ticket.tripStatus);
 
             const tripDate = arrayToDate(ticket.scheduledDepartureTime || ticket.trip?.scheduledDepartureTime || ticket.trip?.date);
             
@@ -152,17 +136,8 @@ export default function TicketsScreen() {
             const isActiveTrip = ticket.tripStatus === 'IN_PROGRESS' || ticket.tripStatus === 'SCHEDULED';
             const isUpcoming = tripDate >= now;
             
-            console.log('📅 Validación de fecha:', {
-              tripDate: tripDate.toISOString(),
-              now: now.toISOString(),
-              isActiveTrip,
-              isUpcoming,
-              shouldShow: isActiveTrip || isUpcoming
-            });
-            
             // Mostrar si: el viaje está activo (IN_PROGRESS/SCHEDULED) O si aún no ha pasado la fecha
             if (isActiveTrip || isUpcoming) {
-              console.log('✅ Ticket será agregado a la lista');
               const trip: Trip = {
                 id: purchase.id,
                 ticketId: ticket.id,
@@ -183,8 +158,6 @@ export default function TicketsScreen() {
                 cooperativeLogo: ticket.cooperativeLogo,
               };
               upcoming.push(trip);
-            } else {
-              console.log('❌ Ticket NO será agregado - fecha pasada y viaje no activo');
             }
           });
         }
@@ -192,8 +165,6 @@ export default function TicketsScreen() {
 
       // Agrupar tickets por viaje (tripId + scheduledDepartureTime)
       const grouped = groupTicketsByTrip(upcoming);
-      console.log('📊 Total tickets procesados:', upcoming.length);
-      console.log('📦 Grupos de viajes creados:', grouped.length);
       setGroupedTrips(grouped);
     } catch (error: any) {
       // No mostrar alert si simplemente no hay compras

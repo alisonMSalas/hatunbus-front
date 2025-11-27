@@ -65,8 +65,6 @@ export default function DriverPassengersScreen() {
       // Primero obtener el viaje en curso (IN_PROGRESS)
       const tripsResponse = await getJsonWithAuth<any>(`${API_BASE_URL}/viajes/conductor/en-curso`);
       
-      console.log('Trips response:', JSON.stringify(tripsResponse, null, 2));
-      
       // Verificar si la respuesta es un array o un objeto
       let currentTrip;
       if (Array.isArray(tripsResponse)) {
@@ -88,17 +86,14 @@ export default function DriverPassengersScreen() {
         return;
       }
 
-      console.log('Current trip:', currentTrip);
       setTrip(currentTrip);
       setTripId(currentTrip.id);
 
       // Cargar los boletos del viaje
       const ticketsResponse = await getJsonWithAuth<Ticket[]>(`${API_BASE_URL}/boletos/viaje/${currentTrip.id}`);
-      console.log('Tickets response:', ticketsResponse);
       setTickets(ticketsResponse || []);
       
     } catch (error) {
-      console.error('Error al cargar pasajeros:', error);
       setTickets([]);
     } finally {
       setLoading(false);

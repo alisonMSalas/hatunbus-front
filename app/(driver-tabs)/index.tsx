@@ -73,11 +73,6 @@ export default function DriverHomeScreen() {
 
       // Cargar viajes programados (SCHEDULED)
       const data = await getJsonWithAuth<Trip[]>(`${API_BASE_URL}/viajes/conductor?t=${timestamp}`);
-      
-      console.log('🚌 Viajes cargados del backend:', data.length);
-      if (data.length > 0) {
-        console.log('📋 Primer viaje:', JSON.stringify(data[0], null, 2));
-      }
 
       const sortedTrips = data.sort((a, b) => {
         // Convertir scheduledDepartureTime que puede venir como array o string
@@ -94,21 +89,9 @@ export default function DriverHomeScreen() {
         const dateB = getDateTime(b);
         return dateA.getTime() - dateB.getTime();
       });
-
-      console.log('✅ Viajes ordenados:', sortedTrips.length);
-      console.log('🔍 Primeros 3 viajes ordenados:', sortedTrips.slice(0, 3).map(t => ({
-        id: t.id,
-        date: t.date,
-        route: `${t.routeOrigin} → ${t.routeDestination}`,
-        time: Array.isArray(t.scheduledDepartureTime) 
-          ? `${t.scheduledDepartureTime[3]}:${String(t.scheduledDepartureTime[4]).padStart(2, '0')}`
-          : t.scheduledDepartureTime
-      })));
       
       setTrips(sortedTrips);
-      console.log('✅ Viajes guardados en estado:', sortedTrips.length);
     } catch (error) {
-      console.error('❌ Error al cargar viajes:', error);
       Alert.alert('Error', 'No se pudieron cargar los viajes asignados');
     } finally {
       setLoading(false);
