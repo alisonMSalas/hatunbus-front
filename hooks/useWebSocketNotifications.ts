@@ -17,7 +17,7 @@ Notifications.setNotificationHandler({
 
 interface PaymentNotification {
   purchaseId: string;
-  type: 'APPROVED' | 'REJECTED';
+  type: 'APPROVED' | 'REJECTED' | 'WARNING';
   title: string;
   message: string;
   amount: number;
@@ -32,11 +32,8 @@ export const useWebSocketNotifications = (userId: string | null) => {
 
   useEffect(() => {
     if (!userId) {
-      console.log('❌ No hay userId, no se conecta WebSocket');
       return;
     }
-
-    console.log('🔌 Iniciando conexión WebSocket para usuario:', userId);
 
     // Solicitar permisos de notificaciones
     requestNotificationPermissions();
@@ -49,15 +46,12 @@ export const useWebSocketNotifications = (userId: string | null) => {
       webSocketFactory: () => new SockJS(wsUrl) as any,
       
       onConnect: () => {
-        console.log('✅ WebSocket conectado');
         setIsConnected(true);
 
         // Suscribirse al tópico personal del usuario
         const subscription = client.subscribe(
           `/topic/user/${userId}`,
           (message) => {
-            console.log('📩 Mensaje recibido:', message.body);
-            
             try {
               const notification: PaymentNotification = JSON.parse(message.body);
               
@@ -68,28 +62,22 @@ export const useWebSocketNotifications = (userId: string | null) => {
               showPushNotification(notification);
               
             } catch (error) {
-              console.error('Error al procesar notificación:', error);
             }
           }
         );
 
         subscriptionRef.current = subscription;
-        console.log('✅ Suscrito a /topic/user/' + userId);
       },
 
       onStompError: (frame) => {
-        console.error('❌ Error STOMP:', frame.headers['message']);
-        console.error('Detalles:', frame.body);
         setIsConnected(false);
       },
 
       onWebSocketError: (event) => {
-        console.error('❌ Error WebSocket:', event);
         setIsConnected(false);
       },
 
       onDisconnect: () => {
-        console.log('🔌 WebSocket desconectado');
         setIsConnected(false);
       },
 
@@ -104,8 +92,6 @@ export const useWebSocketNotifications = (userId: string | null) => {
 
     // Cleanup al desmontar
     return () => {
-      console.log('🧹 Limpiando WebSocket...');
-      
       if (subscriptionRef.current) {
         subscriptionRef.current.unsubscribe();
       }
@@ -126,11 +112,8 @@ export const useWebSocketNotifications = (userId: string | null) => {
     }
 
     if (finalStatus !== 'granted') {
-      console.warn('⚠️ Permisos de notificación denegados');
       return false;
     }
-
-    console.log('✅ Permisos de notificación concedidos');
     return true;
   };
 
@@ -149,10 +132,7 @@ export const useWebSocketNotifications = (userId: string | null) => {
         },
         trigger: null, // Mostrar inmediatamente
       });
-
-      console.log('✅ Push notification mostrada');
     } catch (error) {
-      console.error('❌ Error al mostrar notificación:', error);
     }
   };
 
