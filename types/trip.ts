@@ -110,11 +110,12 @@ export interface TripDto {
 }
 
 export interface SeatAvailabilityDto {
-  tripId: string;
-  seatNumber: string; // V1, P1, V2, P2, etc. (Logical numbering)
-  seatType: 'VENTANA' | 'PASILLO';
-  status: 'available' | 'occupied' | 'reserved';
-  price?: number;
+  seatId?: string;
+  seatCode: string;
+  row?: number;
+  column?: number;
+  seatType?: string;
+  status: 'available' | 'occupied';
 }
 
 export interface TicketDto {
