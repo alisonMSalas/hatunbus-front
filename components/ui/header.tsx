@@ -1,6 +1,7 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { NotificationBell } from '@/components/ui/notification-bell';
 import { EarthColors } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -14,11 +15,12 @@ export type HeaderProps = {
   title: string;
   showBackButton?: boolean;
   onBackPress?: () => void;
+  showNotifications?: boolean;
 };
 
-export function Header({ title, showBackButton = true, onBackPress }: HeaderProps) {
+export function Header({ title, showBackButton = true, onBackPress, showNotifications = true }: HeaderProps) {
   const colorScheme = useColorScheme();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
 
   const handleBackPress = () => {
     if (onBackPress) {
@@ -71,16 +73,24 @@ export function Header({ title, showBackButton = true, onBackPress }: HeaderProp
             style={styles.headerTitle}>
             {title}
           </ThemedText>
-          <TouchableOpacity
-            style={styles.logoutButton}
-            onPress={handleLogout}
-            activeOpacity={0.7}>
-            <MaterialIcons
-              name="logout"
-              size={24}
-              color={colorScheme === 'dark' ? EarthColors.beigeLight : EarthColors.earthDarker}
-            />
-          </TouchableOpacity>
+          
+          <View style={styles.rightActions}>
+            {/* Mostrar notificaciones solo si el usuario está logueado y es cliente/admin */}
+            {showNotifications && user && (user.role === 'CLIENT' || user.role === 'ADMIN') && (
+              <NotificationBell />
+            )}
+            
+            <TouchableOpacity
+              style={styles.logoutButton}
+              onPress={handleLogout}
+              activeOpacity={0.7}>
+              <MaterialIcons
+                name="logout"
+                size={24}
+                color={colorScheme === 'dark' ? EarthColors.beigeLight : EarthColors.earthDarker}
+              />
+            </TouchableOpacity>
+          </View>
         </ThemedView>
       </ThemedView>
     </SafeAreaView>
@@ -124,6 +134,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     letterSpacing: -0.3,
+    flex: 1,
+  },
+  rightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   logoutButton: {
     width: 40,

@@ -14,8 +14,6 @@ export async function fetchWithAuth(input: RequestInfo, init?: FetchOptions): Pr
 
   if (token && token.trim() !== '') {
     headers['Authorization'] = `Bearer ${token}`;
-  } else {
-    console.warn('fetchWithAuth: No valid token found');
   }
 
   const resp = await fetch(input, { ...init, headers });
