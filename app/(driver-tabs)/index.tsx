@@ -49,6 +49,39 @@ interface Trip {
   occupiedSeats?: number;
 }
 
+const ACTION_WINDOW_MINUTES = 15;
+
+const parseScheduledDate = (trip?: Trip | null): Date | null => {
+  if (!trip) return null;
+  const departure = (trip as any).scheduledDepartureTime;
+  if (Array.isArray(departure) && departure.length >= 5) {
+    return new Date(departure[0], departure[1] - 1, departure[2], departure[3] || 0, departure[4] || 0);
+  }
+  if (typeof departure === 'string' && departure.length > 0) {
+    const parsed = new Date(departure);
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+  if (trip.scheduledDate && (trip.frequency?.departureTime || trip.frequencySegment?.departureTime)) {
+    const dateBase = new Date(trip.scheduledDate);
+    if (!isNaN(dateBase.getTime())) {
+      const timeString = trip.frequency?.departureTime || (trip.frequencySegment as any)?.departureTime || '00:00';
+      const [hour, minute] = timeString.split(':').map((v: string) => parseInt(v, 10));
+      dateBase.setHours(hour || 0, minute || 0, 0, 0);
+      return dateBase;
+    }
+  }
+  return null;
+};
+
+const isWithinActionWindow = (trip?: Trip | null) => {
+  if (!trip) return false;
+  const departure = parseScheduledDate(trip);
+  if (!departure) return false;
+  const now = Date.now();
+  const windowStart = departure.getTime() - ACTION_WINDOW_MINUTES * 60 * 1000;
+  return now >= windowStart;
+};
+
 export default function DriverHomeScreen() {
   const [tripInProgress, setTripInProgress] = useState<Trip | null>(null);
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -173,6 +206,10 @@ export default function DriverHomeScreen() {
     // Si no hay viaje en curso, mostrar todos menos el primero
     return tripInProgress ? trips : trips.slice(1);
   }, [tripInProgress, trips]);
+  const startEnabled = useMemo(() => {
+    if (tripInProgress) return false;
+    return isWithinActionWindow(mainTrip);
+  }, [tripInProgress, mainTrip]);
 
   if (loading) {
     return (
@@ -322,18 +359,23 @@ export default function DriverHomeScreen() {
                   </TouchableOpacity>
                 </View>
               ) : (
+                <>
                 <View style={styles.buttonRow}>
                   {/* Botón de iniciar viaje */}
                   <TouchableOpacity
-                    style={[styles.actionButton, styles.startButton]}
+                    style={[
+                      styles.actionButton,
+                      startEnabled ? styles.startButton : styles.startButtonDisabled,
+                    ]}
                     onPress={() => handleStartTrip(mainTrip.id)}
-                    activeOpacity={0.8}>
+                    disabled={!startEnabled}
+                    activeOpacity={startEnabled ? 0.8 : 1}>
                     <MaterialIcons
                       name="play-arrow"
                       size={24}
-                      color={EarthColors.whiteBone}
+                      color={startEnabled ? EarthColors.whiteBone : EarthColors.grayEarth}
                     />
-                    <ThemedText style={styles.actionButtonText}>
+                    <ThemedText style={startEnabled ? styles.actionButtonText : styles.actionButtonTextDisabled}>
                       Iniciar Viaje
                     </ThemedText>
                   </TouchableOpacity>
@@ -353,6 +395,12 @@ export default function DriverHomeScreen() {
                     </ThemedText>
                   </TouchableOpacity>
                 </View>
+                {!startEnabled && (
+                  <ThemedText style={styles.startHint}>
+                    Disponible 15 minutos antes de la hora programada.
+                  </ThemedText>
+                )}
+                </>
               )}
             </View>
           </View>
@@ -709,6 +757,11 @@ const styles = StyleSheet.create({
   startButton: {
     backgroundColor: '#10B981', // Verde para iniciar
   },
+  startButtonDisabled: {
+    backgroundColor: EarthColors.grayEarth + '30',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
   finishButton: {
     backgroundColor: '#EF4444', // Rojo para finalizar
   },
@@ -726,5 +779,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: EarthColors.grayEarth,
+  },
+  startHint: {
+    marginTop: 8,
+    fontSize: 12,
+    color: EarthColors.earthDark,
   },
 });

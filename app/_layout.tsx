@@ -115,6 +115,7 @@ function NavigationContainer({ colorScheme }: { colorScheme: ReturnType<typeof u
         <Stack.Screen name="payment-method" options={{ headerShown: false }} />
         <Stack.Screen name="ticket-detail" options={{ headerShown: false }} />
         <Stack.Screen name="scan-ticket" options={{ headerShown: false }} />
+        <Stack.Screen name="driver-trip-report" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>

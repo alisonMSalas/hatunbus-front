@@ -15,21 +15,10 @@ import {
     View,
 } from 'react-native';
 
-type SeatStatus = 'available' | 'unavailable' | 'selected' | 'others';
-
-interface Seat {
-  id: string;
-  number: string; // V1, P1, V2, P2, etc.
-  status: SeatStatus;
-  passengerInitials?: string;
-  tripSeatId?: string; // ID del TripSeat en el backend
-}
-
 interface PassengerSeat {
   passengerIndex: number;
   passengerName: string;
   seatNumber: string | null; // V1, P1, V2, P2, etc.
-  tripSeatId?: string | null; // ID del TripSeat
 }
 
 interface PassengerInfo {
@@ -39,6 +28,14 @@ interface PassengerInfo {
   email: string;
   phone: string;
   passengerType: 'ADULT' | 'CHILD' | 'SENIOR' | 'DISABLED';
+}
+
+type SeatStatus = 'available' | 'unavailable' | 'selected' | 'others';
+
+interface SeatVisual {
+  number: string;
+  status: SeatStatus;
+  passengerInitials?: string;
 }
 
 export default function SelectSeatsScreen() {
@@ -61,13 +58,35 @@ export default function SelectSeatsScreen() {
 
   // Estados
   const [loading, setLoading] = useState(true);
-  const [seats, setSeats] = useState<Seat[]>([]);
+  const [seatLayout, setSeatLayout] = useState<SeatAvailabilityDto[]>([]);
+  const [seatMatrix, setSeatMatrix] = useState<(SeatAvailabilityDto | null)[][]>([]);
   const [passengerSeats, setPassengerSeats] = useState<PassengerSeat[]>([]);
   const [activePassengerIndex, setActivePassengerIndex] = useState<number>(0);
 
   // Función para obtener iniciales de un nombre
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
+  };
+
+  const buildSeatMatrix = (layout: SeatAvailabilityDto[]) => {
+    if (!layout.length) return [];
+    const maxRow = layout.reduce((max, seat) => Math.max(max, seat.row || 0), 0);
+    const maxCol = layout.reduce((max, seat) => Math.max(max, seat.column || 0), 0);
+    const map = new Map<string, SeatAvailabilityDto>();
+    layout.forEach(seat => {
+      if (seat.row && seat.column) {
+        map.set(`${seat.row}-${seat.column}`, seat);
+      }
+    });
+    const matrix: (SeatAvailabilityDto | null)[][] = [];
+    for (let row = 1; row <= maxRow; row++) {
+      const rowCells: (SeatAvailabilityDto | null)[] = [];
+      for (let col = 1; col <= maxCol; col++) {
+        rowCells.push(map.get(`${row}-${col}`) || null);
+      }
+      matrix.push(rowCells);
+    }
+    return matrix;
   };
 
   // Precio por asiento
@@ -86,33 +105,14 @@ export default function SelectSeatsScreen() {
 
       const data: SeatAvailabilityDto[] = await getJsonWithAuth(`${API_BASE_URL}/viajes/${tripId}/asientos-disponibles`);
 
-      // Mapear asientos del backend (nuevo formato lógico)
-      const mappedSeats: Seat[] = data.map((seat: SeatAvailabilityDto) => {
-        let seatStatus: SeatStatus = 'available';
-        
-        if (seat.status === 'occupied' || seat.status === 'reserved') {
-          seatStatus = 'others';
-        } else if (seat.status === 'available') {
-          seatStatus = 'available';
-        }
-
-        return {
-          id: seat.seatNumber, // Usamos seatNumber como ID (V1, P1, etc.)
-          number: seat.seatNumber, // V1, P1, V2, P2, etc.
-          status: seatStatus,
-          passengerInitials: undefined,
-          tripSeatId: seat.tripSeatId, // Guardamos el ID del TripSeat si existe
-        };
-      });
-
-      setSeats(mappedSeats);
+      setSeatLayout(data);
+      setSeatMatrix(buildSeatMatrix(data));
 
       // Inicializar pasajeros sin asientos asignados
       const initialPassengerSeats: PassengerSeat[] = passengersData.map((passenger, index) => ({
         passengerIndex: index,
         passengerName: passenger.fullName,
-        seatNumber: null,
-        tripSeatId: null,
+        seatNumber: null
       }));
 
       setPassengerSeats(initialPassengerSeats);
@@ -124,72 +124,35 @@ export default function SelectSeatsScreen() {
     }
   };
 
-  const handleSeatSelect = (seatNumber: string) => {
-    const seat = seats.find(s => s.number === seatNumber);
-    
-    // No permitir seleccionar asientos no disponibles o de otros
-    if (seat?.status === 'unavailable' || seat?.status === 'others') {
-      return;
-    }
-
+  const handleSeatSelect = (seat: SeatAvailabilityDto) => {
+    if (seat.status !== 'available') return;
     const activePassenger = passengerSeats[activePassengerIndex];
-    
-    // Si el asiento ya está seleccionado por este pasajero, deseleccionarlo
-    if (seat?.status === 'selected' && activePassenger.seatNumber === seatNumber) {
-      // Deseleccionar asiento
-      const updatedSeats = seats.map(s => 
-        s.number === seatNumber ? { ...s, status: 'available' as SeatStatus, passengerInitials: undefined } : s
-      );
-      setSeats(updatedSeats);
-      
+    if (!activePassenger) return;
+    const seatNumber = seat.seatCode;
+
+    if (activePassenger.seatNumber === seatNumber) {
       const updatedPassengerSeats = [...passengerSeats];
       updatedPassengerSeats[activePassengerIndex].seatNumber = null;
       setPassengerSeats(updatedPassengerSeats);
       return;
     }
 
-    // Verificar si el asiento ya está seleccionado por otro pasajero
     const isSelectedByOther = passengerSeats.some(
       (p, index) => p.seatNumber === seatNumber && index !== activePassengerIndex
     );
-    
-    if (isSelectedByOther) {
-      // No permitir seleccionar un asiento que ya está ocupado por otro pasajero
-      return;
-    }
+    if (isSelectedByOther) return;
 
-    // Obtener el asiento anterior del pasajero activo
-    const previousSeatNumber = activePassenger.seatNumber;
-    const activePassengerInitials = getInitials(activePassenger.passengerName);
-
-    // Actualizar todos los asientos en una sola operación
-    const updatedSeats = seats.map(s => {
-      // Liberar el asiento anterior si existe
-      if (previousSeatNumber && s.number === previousSeatNumber) {
-        return { ...s, status: 'available' as SeatStatus, passengerInitials: undefined };
+    const updatedPassengerSeats = passengerSeats.map((p, index) => {
+      if (index === activePassengerIndex) {
+        return { ...p, seatNumber };
       }
-      // Asignar el nuevo asiento
-      if (s.number === seatNumber) {
-        return { 
-          ...s, 
-          status: 'selected' as SeatStatus, 
-          passengerInitials: activePassengerInitials
-        };
-      }
-      return s;
+      return p;
     });
-
-    setSeats(updatedSeats);
-
-    // Actualizar el asiento del pasajero activo
-    const updatedPassengerSeats = [...passengerSeats];
-    updatedPassengerSeats[activePassengerIndex].seatNumber = seatNumber;
-    updatedPassengerSeats[activePassengerIndex].tripSeatId = seat.tripSeatId || null;
     setPassengerSeats(updatedPassengerSeats);
   };
 
 
-  const getSeatColor = (seat: Seat) => {
+  const getSeatColor = (seat: SeatVisual) => {
     switch (seat.status) {
       case 'available':
         return '#E0F2FE'; // Azul claro para disponibles (como en la imagen)
@@ -204,7 +167,7 @@ export default function SelectSeatsScreen() {
     }
   };
 
-  const getSeatTextColor = (seat: Seat) => {
+  const getSeatTextColor = (seat: SeatVisual) => {
     if (seat.status === 'selected' || seat.status === 'others') {
       return EarthColors.beigeBone;
     }
@@ -217,8 +180,8 @@ export default function SelectSeatsScreen() {
   const getSelectedSeats = () => {
     return passengerSeats
       .filter(p => p.seatNumber !== null)
-      .map(p => p.seatNumber)
-      .sort((a, b) => (a || 0) - (b || 0))
+      .map(p => p.seatNumber || '')
+      .sort((a, b) => a.localeCompare(b))
       .join(', ');
   };
 
@@ -271,38 +234,6 @@ export default function SelectSeatsScreen() {
     });
   };
 
-  // Organizar asientos en filas: V1 P1 [pasillo] P2 V2
-  const getSeatRows = () => {
-    if (seats.length === 0) {
-      return [];
-    }
-
-    const rows: (string | null)[][] = [];
-
-    // Calcular número de filas (cada fila tiene 4 asientos: 2V + 2P)
-    const totalRows = Math.ceil(busSeatsCount / 4);
-
-    for (let i = 0; i < totalRows; i++) {
-      const seatIndex = i * 2 + 1; // 1, 3, 5, 7, ...
-
-      const v1 = seats.find(s => s.number === `V${seatIndex}`);
-      const v2 = seats.find(s => s.number === `V${seatIndex + 1}`);
-      const p1 = seats.find(s => s.number === `P${seatIndex}`);
-      const p2 = seats.find(s => s.number === `P${seatIndex + 1}`);
-
-      const row = [
-        v1?.number || null,  // Ventana izquierda
-        p1?.number || null,  // Pasillo izquierdo
-        null,                // Pasillo central
-        p2?.number || null,  // Pasillo derecho
-        v2?.number || null,  // Ventana derecha
-      ];
-      rows.push(row);
-    }
-
-    return rows;
-  };
-
   if (loading) {
     return (
       <ThemedView style={styles.container}>
@@ -315,7 +246,7 @@ export default function SelectSeatsScreen() {
     );
   }
 
-  if (seats.length === 0) {
+  if (seatMatrix.length === 0) {
     return (
       <ThemedView style={styles.container}>
         <Header title="Seleccionar Asientos" />
@@ -397,46 +328,47 @@ export default function SelectSeatsScreen() {
           </View>
           
           <View style={styles.seatMap}>
-            {getSeatRows().map((row, rowIndex) => (
-              <View key={rowIndex} style={styles.seatRow}>
-                {row.map((seatNum, colIndex) => {
-                  if (seatNum === null) {
-                    // Pasillo
+            {seatMatrix.map((row, rowIndex) => (
+              <View key={`seat-row-${rowIndex}`} style={styles.seatRow}>
+                {row.map((seatCell, colIndex) => {
+                  if (!seatCell) {
                     return <View key={`aisle-${rowIndex}-${colIndex}`} style={styles.aisle} />;
                   }
-                  
-                  const seat = seats.find(s => s.number === seatNum);
-                  if (!seat) return null;
-                  
-                  const isActive = activePassengerIndex !== null && 
-                    passengerSeats[activePassengerIndex]?.seatNumber === seat.number;
-                  
+                  const selectedPassenger = passengerSeats.find(p => p.seatNumber === seatCell.seatCode);
+                  const seatVisual: SeatVisual = {
+                    number: seatCell.seatCode,
+                    status:
+                      seatCell.status !== 'available'
+                        ? 'others'
+                        : selectedPassenger
+                        ? 'selected'
+                        : 'available',
+                    passengerInitials: selectedPassenger ? getInitials(selectedPassenger.passengerName) : undefined
+                  };
+
                   return (
                     <TouchableOpacity
-                      key={seat.number}
+                      key={seatCell.seatCode}
                       style={[
                         styles.seat,
-                        { backgroundColor: getSeatColor(seat) },
-                        seat.status === 'selected' && styles.seatSelected,
-                        seat.status === 'others' && styles.seatOthers,
-                        seat.status === 'unavailable' && styles.seatUnavailable,
+                        { backgroundColor: getSeatColor(seatVisual) }
                       ]}
-                      onPress={() => handleSeatSelect(seat.number)}
-                      disabled={seat.status === 'unavailable' || seat.status === 'others'}
+                      onPress={() => handleSeatSelect(seatCell)}
+                      disabled={seatCell.status !== 'available'}
                       activeOpacity={0.7}>
                       <ThemedText 
-                        lightColor={getSeatTextColor(seat)} 
-                        darkColor={getSeatTextColor(seat)} 
+                        lightColor={getSeatTextColor(seatVisual)} 
+                        darkColor={getSeatTextColor(seatVisual)} 
                         style={styles.seatNumber}>
-                        {seat.number}
+                        {seatCell.seatCode}
                       </ThemedText>
-                      {seat.passengerInitials && (
+                      {seatVisual.passengerInitials && (
                         <View style={styles.seatInitials}>
                           <ThemedText 
                             lightColor={EarthColors.beigeBone} 
                             darkColor={EarthColors.beigeBone} 
                             style={styles.seatInitialsText}>
-                            {seat.passengerInitials}
+                            {seatVisual.passengerInitials}
                           </ThemedText>
                         </View>
                       )}
@@ -622,48 +554,69 @@ const styles = StyleSheet.create({
   },
   seatMap: {
     backgroundColor: EarthColors.whiteBone,
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E0E6F2',
     shadowColor: EarthColors.blackSoft,
     shadowOffset: {
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
     elevation: 3,
+    position: 'relative',
   },
   seatRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
+    rowGap: 8,
   },
   aisle: {
-    width: 40,
+    width: 30,
+    height: 38,
+    borderBottomWidth: 1,
+    borderColor: '#C7CFDF',
+    borderStyle: 'dashed',
   },
   seat: {
-    width: 50,
-    height: 50,
-    borderRadius: 8,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     marginHorizontal: 4,
     position: 'relative',
+    borderWidth: 1,
+    borderColor: '#CDD6EE',
+    backgroundColor: '#EEF3FF',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 3,
+    elevation: 2,
   },
   seatSelected: {
-    backgroundColor: EarthColors.earthPrimary,
+    backgroundColor: '#5C7CFA',
+    borderColor: '#5C7CFA',
   },
   seatOthers: {
-    backgroundColor: '#10B981',
+    backgroundColor: '#C8CED9',
+    borderColor: '#C8CED9',
   },
   seatUnavailable: {
-    backgroundColor: EarthColors.grayMedium || '#E5E5E5',
-    opacity: 0.6,
+    backgroundColor: '#E1E4EC',
+    borderColor: '#E1E4EC',
+    opacity: 0.7,
   },
   seatNumber: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
+    color: '#4D5B86',
   },
   seatInitials: {
     position: 'absolute',
