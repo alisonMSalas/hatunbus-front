@@ -73,13 +73,18 @@ const parseScheduledDate = (trip?: Trip | null): Date | null => {
   return null;
 };
 
+// TEMPORALMENTE DESHABILITADO - Validación de 15 minutos antes
+// TODO: Rehabilitar esta validación después de agregar funcionalidad al iniciar viaje
 const isWithinActionWindow = (trip?: Trip | null) => {
-  if (!trip) return false;
-  const departure = parseScheduledDate(trip);
-  if (!departure) return false;
-  const now = Date.now();
-  const windowStart = departure.getTime() - ACTION_WINDOW_MINUTES * 60 * 1000;
-  return now >= windowStart;
+  // if (!trip) return false;
+  // const departure = parseScheduledDate(trip);
+  // if (!departure) return false;
+  // const now = Date.now();
+  // const windowStart = departure.getTime() - ACTION_WINDOW_MINUTES * 60 * 1000;
+  // return now >= windowStart;
+  
+  // TEMPORAL: Siempre permitir iniciar viaje para pruebas
+  return true;
 };
 
 export default function DriverHomeScreen() {
@@ -395,11 +400,12 @@ export default function DriverHomeScreen() {
                     </ThemedText>
                   </TouchableOpacity>
                 </View>
-                {!startEnabled && (
+                {/* TEMPORALMENTE DESHABILITADO - Mensaje de 15 minutos */}
+                {/* {!startEnabled && (
                   <ThemedText style={styles.startHint}>
                     Disponible 15 minutos antes de la hora programada.
                   </ThemedText>
-                )}
+                )} */}
                 </>
               )}
             </View>

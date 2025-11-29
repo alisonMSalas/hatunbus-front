@@ -1,14 +1,43 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { Tabs } from 'expo-router';
-import React from 'react';
+import { Tabs, useFocusEffect } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import { Platform } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { Colors, EarthColors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getJsonWithAuth } from '@/services/api';
+import { API_BASE_URL } from '@/constants/api';
+
+interface Trip {
+  id: string;
+  status: 'IN_PROGRESS' | 'SCHEDULED' | 'COMPLETED';
+}
 
 export default function DriverTabLayout() {
   const colorScheme = useColorScheme();
+  const [hasTripInProgress, setHasTripInProgress] = useState(false);
+
+  const checkTripStatus = useCallback(async () => {
+    try {
+      const trip = await getJsonWithAuth<Trip>(`${API_BASE_URL}/viajes/conductor/en-curso`);
+      console.log('Trip status check:', trip);
+      const hasTrip = trip && trip.status === 'IN_PROGRESS';
+      console.log('Has trip in progress:', hasTrip);
+      setHasTripInProgress(hasTrip);
+    } catch (error) {
+      console.log('Error checking trip status:', error);
+      setHasTripInProgress(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      checkTripStatus();
+      const interval = setInterval(checkTripStatus, 5000); // Check every 5 seconds
+      return () => clearInterval(interval);
+    }, [checkTripStatus])
+  );
 
   return (
     <Tabs
@@ -59,6 +88,16 @@ export default function DriverTabLayout() {
           tabBarIcon: ({ color }) => (
             <MaterialIcons name="people" size={24} color={color} />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="expenses"
+        options={{
+          title: 'Gastos',
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="attach-money" size={24} color={color} />
+          ),
+          href: hasTripInProgress ? '/(driver-tabs)/expenses' : null,
         }}
       />
       <Tabs.Screen

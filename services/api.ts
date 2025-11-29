@@ -80,3 +80,22 @@ export async function putJsonWithAuth<T = any>(url: string, body?: any, init?: F
   }
   return JSON.parse(text) as T;
 }
+
+export async function deleteWithAuth<T = any>(url: string, init?: FetchOptions): Promise<T> {
+  const r = await fetchWithAuth(url, {
+    method: 'DELETE',
+    ...init,
+  });
+
+  if (!r.ok) {
+    const txt = await r.text();
+    throw new Error(txt || `HTTP ${r.status}`);
+  }
+  
+  // Check if response has content before trying to parse JSON
+  const text = await r.text();
+  if (!text || text.trim() === '') {
+    return null as T;
+  }
+  return JSON.parse(text) as T;
+}
