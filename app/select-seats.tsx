@@ -185,9 +185,29 @@ export default function SelectSeatsScreen() {
       .join(', ');
   };
 
+  const getSelectedCount = () => passengerSeats.filter(p => p.seatNumber !== null).length;
+
+  const getSubtotal = () => (getSelectedCount() * pricePerSeat);
+
+  const getDiscountAmount = () => {
+    let discount = 0;
+    passengerSeats.forEach((ps) => {
+      if (!ps.seatNumber) return;
+      const passengerInfo = passengersData[ps.passengerIndex];
+      if (!passengerInfo) return;
+      if (passengerInfo.passengerType === 'CHILD' || passengerInfo.passengerType === 'DISABLED') {
+        discount += pricePerSeat * 0.5;
+      } else if (passengerInfo.passengerType === 'SENIOR') {
+        discount += pricePerSeat * 0.3;
+      }
+    });
+    return discount;
+  };
+
   const getTotalPrice = () => {
-    const selectedCount = passengerSeats.filter(p => p.seatNumber !== null).length;
-    return (selectedCount * pricePerSeat).toFixed(2);
+    const subtotal = getSubtotal();
+    const discount = getDiscountAmount();
+    return Math.max(subtotal - discount, 0).toFixed(2);
   };
 
   const handleConfirmSeats = () => {
@@ -199,12 +219,18 @@ export default function SelectSeatsScreen() {
       return;
     }
 
-    // Verificar que tengamos los IDs de paradas
-    const originStopId = params.originStopId as string;
-    const destinationStopId = params.destinationStopId as string;
+    // Verificar que tengamos los IDs de ciudades
+    const originCityId =
+      (Array.isArray(params.originCityId) ? params.originCityId[0] : params.originCityId) ||
+      (Array.isArray(params.originStopId) ? params.originStopId[0] : params.originStopId) ||
+      '';
+    const destinationCityId =
+      (Array.isArray(params.destinationCityId) ? params.destinationCityId[0] : params.destinationCityId) ||
+      (Array.isArray(params.destinationStopId) ? params.destinationStopId[0] : params.destinationStopId) ||
+      '';
 
-    if (!originStopId || !destinationStopId || originStopId === '' || destinationStopId === '') {
-      alert('Error: No se encontraron las paradas del viaje. Por favor intenta de nuevo desde la búsqueda.');
+    if (!originCityId || !destinationCityId) {
+      alert('Error: No se encontraron las ciudades del viaje. Por favor intenta de nuevo desde la búsqueda.');
       return;
     }
 
@@ -219,8 +245,8 @@ export default function SelectSeatsScreen() {
         passengerEmail: passengerInfo.email || '',
         passengerPhone: passengerInfo.phone || '',
         passengerType: passengerInfo.passengerType,
-        originStopId: originStopId,
-        destinationStopId: destinationStopId,
+        originCityId,
+        destinationCityId,
       };
     });
 
@@ -437,6 +463,36 @@ export default function SelectSeatsScreen() {
             {getSelectedSeats() || 'Ninguno'}
           </ThemedText>
         </View>
+        <View style={styles.summaryRow}>
+          <ThemedText 
+            lightColor={EarthColors.earthDark} 
+            darkColor={EarthColors.grayEarth} 
+            style={styles.summaryLabel}>
+            Subtotal:
+          </ThemedText>
+          <ThemedText 
+            lightColor={EarthColors.earthDarker} 
+            darkColor={EarthColors.beigeLight} 
+            style={styles.summaryValue}>
+            ${getSubtotal().toFixed(2)}
+          </ThemedText>
+        </View>
+        {getDiscountAmount() > 0 && (
+          <View style={styles.summaryRow}>
+            <ThemedText 
+              lightColor={EarthColors.earthDark} 
+              darkColor={EarthColors.grayEarth} 
+              style={styles.summaryLabel}>
+              Descuentos:
+            </ThemedText>
+            <ThemedText 
+              lightColor="#B91C1C" 
+              darkColor="#F87171" 
+              style={styles.discountValue}>
+              -${getDiscountAmount().toFixed(2)}
+            </ThemedText>
+          </View>
+        )}
         <View style={styles.summaryRow}>
           <ThemedText 
             lightColor={EarthColors.earthDark} 
@@ -689,6 +745,11 @@ const styles = StyleSheet.create({
   summaryValue: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  discountValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#B91C1C',
   },
   totalPrice: {
     fontSize: 20,

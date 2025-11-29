@@ -156,8 +156,8 @@ export interface CreateTicketRequest {
   passengerEmail: string;
   passengerPhone: string;
   passengerType: PassengerType;
-  originStopId: string;
-  destinationStopId: string;
+  originCityId: string;
+  destinationCityId: string;
 }
 
 export interface CreatePurchaseRequest {

@@ -367,6 +367,15 @@ export default function PassengerDetailsScreen() {
     await savePassengersForFutureUse();
 
     // Navegar a la pantalla de selección de asientos pasando la info de pasajeros
+    const originCityId =
+      (Array.isArray(params.originCityId) ? params.originCityId[0] : params.originCityId) ||
+      (Array.isArray(params.originStopId) ? params.originStopId[0] : params.originStopId) ||
+      '';
+    const destinationCityId =
+      (Array.isArray(params.destinationCityId) ? params.destinationCityId[0] : params.destinationCityId) ||
+      (Array.isArray(params.destinationStopId) ? params.destinationStopId[0] : params.destinationStopId) ||
+      '';
+
     router.push({
       pathname: '/select-seats',
       params: {
@@ -378,8 +387,8 @@ export default function PassengerDetailsScreen() {
         departureTime: Array.isArray(params.departureTime) ? params.departureTime[0] : params.departureTime,
         arrivalTime: Array.isArray(params.arrivalTime) ? params.arrivalTime[0] : params.arrivalTime,
         busSeatsCount: Array.isArray(params.busSeatsCount) ? params.busSeatsCount[0] : params.busSeatsCount,
-        originStopId: Array.isArray(params.originStopId) ? params.originStopId[0] : params.originStopId,
-        destinationStopId: Array.isArray(params.destinationStopId) ? params.destinationStopId[0] : params.destinationStopId,
+        originCityId,
+        destinationCityId,
       },
     });
   };

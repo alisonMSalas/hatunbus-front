@@ -104,6 +104,15 @@ export default function TripDetailsScreen() {
       ? params.passengers[0]
       : params.passengers || '1';
 
+    const originCityId =
+      (Array.isArray(params.originCityId) ? params.originCityId[0] : params.originCityId) ||
+      (Array.isArray(params.originStopId) ? params.originStopId[0] : params.originStopId) ||
+      '';
+    const destinationCityId =
+      (Array.isArray(params.destinationCityId) ? params.destinationCityId[0] : params.destinationCityId) ||
+      (Array.isArray(params.destinationStopId) ? params.destinationStopId[0] : params.destinationStopId) ||
+      '';
+
     router.push({
       pathname: '/passenger-details',
       params: {
@@ -114,8 +123,8 @@ export default function TripDetailsScreen() {
         departureTime: tripData.departureTime,
         arrivalTime: tripData.arrivalTime,
         busSeatsCount: tripData.busSeatsCount.toString(),
-        originStopId: Array.isArray(params.originStopId) ? params.originStopId[0] : params.originStopId,
-        destinationStopId: Array.isArray(params.destinationStopId) ? params.destinationStopId[0] : params.destinationStopId,
+        originCityId,
+        destinationCityId,
       },
     });
   };
