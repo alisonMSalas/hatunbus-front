@@ -30,6 +30,7 @@ const arrayToDate = (dateArray: any): Date => {
 
 interface TripDetails {
   id: string;
+  busId: string;
   cooperative: string;
   busUnitNumber: string;
   busPlate: string;
@@ -65,6 +66,7 @@ export default function TripDetailsScreen() {
 
       const formattedTrip: TripDetails = {
         id: data.id,
+        busId: data.busId,
         cooperative: data.frequency?.cooperativeName || 'Cooperativa',
         busUnitNumber: data.busUnitNumber ? `Bus #${data.busUnitNumber}` : data.busPlate || 'N/A',
         busPlate: data.busPlate || 'N/A',
@@ -118,6 +120,7 @@ export default function TripDetailsScreen() {
       params: {
         passengers: passengers,
         tripId: tripData.id,
+        busId: tripData.busId,
         operator: tripData.cooperative,
         price: Array.isArray(params.price) ? params.price[0] : params.price,
         departureTime: tripData.departureTime,

@@ -38,13 +38,58 @@ interface SeatVisual {
   passengerInitials?: string;
 }
 
+type SpecialCellType = 'aisle' | 'bathroom' | 'door' | 'stairs' | 'storage' | 'wheelchair';
+
+type GridCell =
+  | { kind: 'seat'; seat: SeatAvailabilityDto; templateSeatType?: string }
+  | { kind: 'special'; specialType: SpecialCellType }
+  | { kind: 'empty' };
+
+interface BusTemplateInfo {
+  seatConfiguration?: Record<string, string>;
+}
+
+interface BusDtoResponse {
+  id: string;
+  busTemplate?: BusTemplateInfo | null;
+}
+
+const seatTypeValues = new Set(['NORMAL', 'VIP', 'SEMI_BED', 'BED']);
+
+const specialLabels: Record<SpecialCellType, string> = {
+  aisle: 'Pasillo',
+  bathroom: 'Baño',
+  door: 'Puerta',
+  stairs: 'Escalera',
+  storage: 'Maletero',
+  wheelchair: 'Acceso',
+};
+
+const normalizeSpecialType = (type: string | undefined): SpecialCellType | null => {
+  if (!type) return null;
+  const value = type.toLowerCase();
+  switch (value) {
+    case 'aisle':
+      return 'aisle';
+    case 'bathroom':
+      return 'bathroom';
+    case 'door':
+      return 'door';
+    case 'stairs':
+      return 'stairs';
+    case 'maletero':
+      return 'storage';
+    case 'wheelchair':
+      return 'wheelchair';
+    default:
+      return null;
+  }
+};
+
+const getSpecialLabel = (type: SpecialCellType) => specialLabels[type] || '';
+
 export default function SelectSeatsScreen() {
   const params = useLocalSearchParams();
-
-  // Obtener el número de pasajeros desde los parámetros
-  const passengersCount = parseInt(
-    Array.isArray(params.passengers) ? params.passengers[0] : params.passengers || '1'
-  );
 
   // Parsear datos de pasajeros
   const passengersData: PassengerInfo[] = params.passengersData
@@ -52,20 +97,83 @@ export default function SelectSeatsScreen() {
     : [];
 
   const tripId = Array.isArray(params.tripId) ? params.tripId[0] : params.tripId;
-  const busSeatsCount = parseInt(
-    Array.isArray(params.busSeatsCount) ? params.busSeatsCount[0] : params.busSeatsCount || '0'
-  );
-
+  const busId = Array.isArray(params.busId) ? params.busId[0] : params.busId;
   // Estados
   const [loading, setLoading] = useState(true);
-  const [seatLayout, setSeatLayout] = useState<SeatAvailabilityDto[]>([]);
-  const [seatMatrix, setSeatMatrix] = useState<(SeatAvailabilityDto | null)[][]>([]);
+  const [seatGrid, setSeatGrid] = useState<GridCell[][]>([]);
   const [passengerSeats, setPassengerSeats] = useState<PassengerSeat[]>([]);
   const [activePassengerIndex, setActivePassengerIndex] = useState<number>(0);
 
   // Función para obtener iniciales de un nombre
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
+  };
+
+  const renderSeatCell = (cell: GridCell & { kind: 'seat' }, rowIndex: number, colIndex: number) => {
+    const seat = cell.seat;
+    const selectedPassenger = passengerSeats.find(p => p.seatNumber === seat.seatCode);
+    const seatVisual: SeatVisual = {
+      number: seat.seatCode,
+      status:
+        seat.status !== 'available'
+          ? 'others'
+          : selectedPassenger
+          ? 'selected'
+          : 'available',
+      passengerInitials: selectedPassenger ? getInitials(selectedPassenger.passengerName) : undefined,
+    };
+
+    return (
+      <TouchableOpacity
+        key={`seat-${seat.seatCode}-${rowIndex}-${colIndex}`}
+        style={[styles.seat, { backgroundColor: getSeatColor(seatVisual) }]}
+        onPress={() => handleSeatSelect(seat)}
+        disabled={seat.status !== 'available'}
+        activeOpacity={0.7}>
+        <ThemedText
+          lightColor={getSeatTextColor(seatVisual)}
+          darkColor={getSeatTextColor(seatVisual)}
+          style={styles.seatNumber}>
+          {seat.seatCode}
+        </ThemedText>
+        {seatVisual.passengerInitials && (
+          <View style={styles.seatInitials}>
+            <ThemedText
+              lightColor={EarthColors.beigeBone}
+              darkColor={EarthColors.beigeBone}
+              style={styles.seatInitialsText}>
+              {seatVisual.passengerInitials}
+            </ThemedText>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+  const renderSpecialCell = (type: SpecialCellType, rowIndex: number, colIndex: number) => {
+    if (type === 'aisle') {
+      return <View key={`aisle-${rowIndex}-${colIndex}`} style={styles.aisle} />;
+    }
+    return (
+      <View key={`special-${rowIndex}-${colIndex}`} style={styles.specialCell}>
+        <ThemedText
+          lightColor={EarthColors.grayEarth}
+          darkColor={EarthColors.grayEarth}
+          style={styles.specialCellText}>
+          {getSpecialLabel(type)}
+        </ThemedText>
+      </View>
+    );
+  };
+
+  const renderGridCell = (cell: GridCell, rowIndex: number, colIndex: number) => {
+    if (cell.kind === 'seat') {
+      return renderSeatCell(cell, rowIndex, colIndex);
+    }
+    if (cell.kind === 'special') {
+      return renderSpecialCell(cell.specialType, rowIndex, colIndex);
+    }
+    return <View key={`empty-${rowIndex}-${colIndex}`} style={styles.emptyCell} />;
   };
 
   const buildSeatMatrix = (layout: SeatAvailabilityDto[]) => {
@@ -89,6 +197,89 @@ export default function SelectSeatsScreen() {
     return matrix;
   };
 
+  const createSeatFromTemplate = (
+    index: number,
+    row: number,
+    column: number,
+    seatType: string
+  ): SeatAvailabilityDto => {
+    const code = `S${(index + 1).toString().padStart(2, '0')}`;
+    return {
+      seatCode: code,
+      seatNumber: code,
+      row,
+      column,
+      floor: 1,
+      seatType,
+      status: 'available',
+    };
+  };
+
+  const buildLegacyGrid = (availability: SeatAvailabilityDto[]): GridCell[][] => {
+    const matrix = buildSeatMatrix(availability);
+    if (!matrix.length) return [];
+    return matrix.map(row =>
+      row.map(cell => (cell ? { kind: 'seat', seat: cell } : { kind: 'empty' }))
+    );
+  };
+
+  const buildTemplateGrid = (
+    availability: SeatAvailabilityDto[],
+    config: Record<string, string>
+  ): GridCell[][] => {
+    if (!config || Object.keys(config).length === 0) {
+      return [];
+    }
+
+    const seatMap = new Map<string, SeatAvailabilityDto>();
+    availability.forEach(seat => {
+      if (seat.row && seat.column) {
+        seatMap.set(`${seat.row}-${seat.column}`, seat);
+      }
+    });
+
+    const indices = Object.keys(config)
+      .map(key => Number(key))
+      .filter(idx => !Number.isNaN(idx));
+
+    if (!indices.length) {
+      return [];
+    }
+
+    const totalRows = indices.reduce((max, idx) => Math.max(max, Math.floor(idx / 5) + 1), 0);
+
+    const grid: GridCell[][] = [];
+    for (let row = 1; row <= totalRows; row++) {
+      const rowCells: GridCell[] = [];
+      for (let column = 1; column <= 5; column++) {
+        const index = (row - 1) * 5 + (column - 1);
+        const cellType = config[index];
+
+        if (!cellType) {
+          rowCells.push({ kind: 'empty' });
+          continue;
+        }
+
+        if (seatTypeValues.has(cellType)) {
+          const seat =
+            seatMap.get(`${row}-${column}`) || createSeatFromTemplate(index, row, column, cellType);
+          rowCells.push({ kind: 'seat', seat, templateSeatType: cellType });
+          continue;
+        }
+
+        const specialType = normalizeSpecialType(cellType);
+        if (specialType) {
+          rowCells.push({ kind: 'special', specialType });
+        } else {
+          rowCells.push({ kind: 'empty' });
+        }
+      }
+      grid.push(rowCells);
+    }
+
+    return grid;
+  };
+
   // Precio por asiento
   const pricePerSeat = parseFloat(
     Array.isArray(params.price) ? params.price[0] : params.price || '25.00'
@@ -103,12 +294,29 @@ export default function SelectSeatsScreen() {
     try {
       setLoading(true);
 
-      const data: SeatAvailabilityDto[] = await getJsonWithAuth(`${API_BASE_URL}/viajes/${tripId}/asientos-disponibles`);
+      const availabilityPromise = getJsonWithAuth<SeatAvailabilityDto[]>(
+        `${API_BASE_URL}/viajes/${tripId}/asientos-disponibles`
+      );
 
-      setSeatLayout(data);
-      setSeatMatrix(buildSeatMatrix(data));
+      const busPromise: Promise<BusDtoResponse | null> = busId
+        ? getJsonWithAuth<BusDtoResponse>(`${API_BASE_URL}/buses/${busId}`)
+        : Promise.resolve(null);
 
-      // Inicializar pasajeros sin asientos asignados
+      const [availability, busResponse] = await Promise.all([availabilityPromise, busPromise]);
+
+      const templateConfig = busResponse?.busTemplate?.seatConfiguration;
+      let grid: GridCell[][] = [];
+
+      if (templateConfig && Object.keys(templateConfig).length > 0) {
+        grid = buildTemplateGrid(availability, templateConfig);
+      }
+
+      if (!grid.length) {
+        grid = buildLegacyGrid(availability);
+      }
+
+      setSeatGrid(grid);
+
       const initialPassengerSeats: PassengerSeat[] = passengersData.map((passenger, index) => ({
         passengerIndex: index,
         passengerName: passenger.fullName,
@@ -272,7 +480,7 @@ export default function SelectSeatsScreen() {
     );
   }
 
-  if (seatMatrix.length === 0) {
+  if (seatGrid.length === 0) {
     return (
       <ThemedView style={styles.container}>
         <Header title="Seleccionar Asientos" />
@@ -354,53 +562,9 @@ export default function SelectSeatsScreen() {
           </View>
           
           <View style={styles.seatMap}>
-            {seatMatrix.map((row, rowIndex) => (
+            {seatGrid.map((row, rowIndex) => (
               <View key={`seat-row-${rowIndex}`} style={styles.seatRow}>
-                {row.map((seatCell, colIndex) => {
-                  if (!seatCell) {
-                    return <View key={`aisle-${rowIndex}-${colIndex}`} style={styles.aisle} />;
-                  }
-                  const selectedPassenger = passengerSeats.find(p => p.seatNumber === seatCell.seatCode);
-                  const seatVisual: SeatVisual = {
-                    number: seatCell.seatCode,
-                    status:
-                      seatCell.status !== 'available'
-                        ? 'others'
-                        : selectedPassenger
-                        ? 'selected'
-                        : 'available',
-                    passengerInitials: selectedPassenger ? getInitials(selectedPassenger.passengerName) : undefined
-                  };
-
-                  return (
-                    <TouchableOpacity
-                      key={seatCell.seatCode}
-                      style={[
-                        styles.seat,
-                        { backgroundColor: getSeatColor(seatVisual) }
-                      ]}
-                      onPress={() => handleSeatSelect(seatCell)}
-                      disabled={seatCell.status !== 'available'}
-                      activeOpacity={0.7}>
-                      <ThemedText 
-                        lightColor={getSeatTextColor(seatVisual)} 
-                        darkColor={getSeatTextColor(seatVisual)} 
-                        style={styles.seatNumber}>
-                        {seatCell.seatCode}
-                      </ThemedText>
-                      {seatVisual.passengerInitials && (
-                        <View style={styles.seatInitials}>
-                          <ThemedText 
-                            lightColor={EarthColors.beigeBone} 
-                            darkColor={EarthColors.beigeBone} 
-                            style={styles.seatInitialsText}>
-                            {seatVisual.passengerInitials}
-                          </ThemedText>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
+                {row.map((cell, colIndex) => renderGridCell(cell, rowIndex, colIndex))}
               </View>
             ))}
           </View>
@@ -688,6 +852,28 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     color: EarthColors.beigeBone,
+  },
+  specialCell: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#DADCE8',
+    marginHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFF',
+  },
+  specialCellText: {
+    fontSize: 10,
+    textAlign: 'center',
+    color: EarthColors.grayEarth,
+  },
+  emptyCell: {
+    width: 44,
+    height: 44,
+    marginHorizontal: 4,
   },
   legend: {
     flexDirection: 'row',
