@@ -112,9 +112,12 @@ export interface TripDto {
 export interface SeatAvailabilityDto {
   seatId?: string;
   seatCode: string;
+  seatNumber?: string;
   row?: number;
   column?: number;
+  floor?: number;
   seatType?: string;
+  additionalPrice?: number;
   status: 'available' | 'occupied';
 }
 

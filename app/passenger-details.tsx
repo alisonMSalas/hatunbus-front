@@ -383,6 +383,7 @@ export default function PassengerDetailsScreen() {
         passengersData: JSON.stringify(passengers), // Pasar todos los datos de pasajeros
         price: Array.isArray(params.price) ? params.price[0] : params.price || '25.00',
         tripId: Array.isArray(params.tripId) ? params.tripId[0] : params.tripId,
+        busId: Array.isArray(params.busId) ? params.busId[0] : params.busId,
         operator: Array.isArray(params.operator) ? params.operator[0] : params.operator,
         departureTime: Array.isArray(params.departureTime) ? params.departureTime[0] : params.departureTime,
         arrivalTime: Array.isArray(params.arrivalTime) ? params.arrivalTime[0] : params.arrivalTime,

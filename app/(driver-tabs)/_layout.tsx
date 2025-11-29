@@ -8,6 +8,7 @@ import { Colors, EarthColors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getJsonWithAuth } from '@/services/api';
 import { API_BASE_URL } from '@/constants/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Trip {
   id: string;
@@ -16,9 +17,16 @@ interface Trip {
 
 export default function DriverTabLayout() {
   const colorScheme = useColorScheme();
+  const { user } = useAuth();
   const [hasTripInProgress, setHasTripInProgress] = useState(false);
 
   const checkTripStatus = useCallback(async () => {
+    // ONLY check trip status if user is a DRIVER
+    if (!user || user.role !== 'DRIVER') {
+      setHasTripInProgress(false);
+      return;
+    }
+
     try {
       const trip = await getJsonWithAuth<Trip>(`${API_BASE_URL}/viajes/conductor/en-curso`);
       console.log('Trip status check:', trip);
@@ -29,7 +37,7 @@ export default function DriverTabLayout() {
       console.log('Error checking trip status:', error);
       setHasTripInProgress(false);
     }
-  }, []);
+  }, [user]);
 
   useFocusEffect(
     useCallback(() => {
