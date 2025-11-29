@@ -37,8 +37,8 @@ interface TripResult {
   arrivalTime: string;
   arrivalCity: string;
   duration: string;
-  originStopId: string | null;
-  destinationStopId: string | null;
+  originCityId: string | null;
+  destinationCityId: string | null;
 }
 
 export default function SearchResultsScreen() {
@@ -86,8 +86,8 @@ export default function SearchResultsScreen() {
         }
 
         // Usar los IDs de las ciudades de origen y destino de la ruta del segmento
-        const originCityId = trip.frequencySegment?.route?.originCityId || trip.routeOrigin;
-        const destinationCityId = trip.frequencySegment?.route?.destinationCityId || trip.routeDestination;
+        const originCityId = trip.frequencySegment?.route?.originCityId || null;
+        const destinationCityId = trip.frequencySegment?.route?.destinationCityId || null;
 
         return {
           id: trip.id,
@@ -97,8 +97,8 @@ export default function SearchResultsScreen() {
           departureTime: formatTime(trip.scheduledDepartureTime),
           departureCity: trip.routeOrigin || searchParams.origin,
           arrivalTime: formatTime(arrivalTime),
-          originStopId: originCityId,
-          destinationStopId: destinationCityId,
+          originCityId,
+          destinationCityId,
           arrivalCity: trip.routeDestination || searchParams.destination,
           duration: calculateDuration(trip.scheduledDepartureTime, arrivalTime),
         };
@@ -144,8 +144,8 @@ export default function SearchResultsScreen() {
         arrivalCity: trip.arrivalCity,
         duration: trip.duration,
         passengers: searchParams.passengers,
-        originStopId: trip.originStopId || '',
-        destinationStopId: trip.destinationStopId || '',
+        originCityId: trip.originCityId || '',
+        destinationCityId: trip.destinationCityId || '',
       },
     });
   };
