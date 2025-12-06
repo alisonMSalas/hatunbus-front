@@ -38,7 +38,21 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "La aplicación necesita acceso a tu cámara para escanear códigos QR de boletos."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "La aplicación necesita acceso a tus fotos para subir comprobantes de pago."
+        }
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,
