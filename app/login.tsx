@@ -28,10 +28,16 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const colorScheme = useColorScheme();
   const { login } = useAuth();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Por favor ingresa tu email y contraseña');
+      return;
+    }
+
+    if (!emailRegex.test(email.trim())) {
+      Alert.alert('Error', 'Ingresa un correo electronico valido');
       return;
     }
 
